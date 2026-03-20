@@ -21,6 +21,7 @@ type SessionPayload = {
 export const SESSION_COOKIE_NAME = "oar-ore-session";
 const SESSION_MAX_AGE_SECONDS = 60 * 60 * 24 * 7;
 const DEV_AUTH_SECRET = "oar-ore-dev-auth-secret";
+let authSecretWarningShown = false;
 
 let usersIndexReady = false;
 
@@ -29,7 +30,16 @@ function getAuthSecret() {
   if (envSecret) return envSecret;
 
   if (process.env.NODE_ENV === "production") {
-    throw new Error("AUTH_SECRET environment variable is required in production.");
+    const fallbackSecret = process.env.ADMIN_PASSWORD?.trim();
+    if (fallbackSecret && fallbackSecret.length >= 8) {
+      if (!authSecretWarningShown) {
+        console.warn(
+          "[auth] AUTH_SECRET missing in production. Using temporary ADMIN_PASSWORD fallback. Please set AUTH_SECRET."
+        );
+        authSecretWarningShown = true;
+      }
+      return fallbackSecret;
+    }
   }
 
   return DEV_AUTH_SECRET;

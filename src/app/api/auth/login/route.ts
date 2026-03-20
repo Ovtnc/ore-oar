@@ -36,7 +36,8 @@ export async function POST(request: Request) {
     const response = NextResponse.json({ user });
     response.cookies.set(SESSION_COOKIE_NAME, token, getSessionCookieOptions());
     return response;
-  } catch {
+  } catch (err) {
+    console.error("[auth/login] POST failed:", err);
     return NextResponse.json({ error: "Giriş yapılamadı." }, { status: 500 });
   }
 }

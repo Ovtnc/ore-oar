@@ -49,6 +49,7 @@ export async function POST(request: Request) {
     response.cookies.set(SESSION_COOKIE_NAME, token, getSessionCookieOptions());
     return response;
   } catch (err) {
+    console.error("[auth/register] POST failed:", err);
     const message = err instanceof Error ? err.message : "Kayıt oluşturulamadı.";
     if (message.includes("E11000")) {
       return NextResponse.json({ error: "Bu e-posta ile kayıtlı bir hesap var." }, { status: 409 });

@@ -71,6 +71,24 @@ function normalizeImageUrls(input: string[]) {
   return Array.from(new Set(input.map((item) => item.trim()).filter(Boolean)));
 }
 
+function normalizeDisplayImageUrl(input: string | null | undefined) {
+  if (!input) return "";
+  const value = input.trim();
+  if (!value) return "";
+
+  const uploadsIndex = value.toLowerCase().lastIndexOf("/uploads/");
+  if (uploadsIndex >= 0) {
+    return value.slice(uploadsIndex);
+  }
+  if (value.toLowerCase().startsWith("uploads/")) {
+    return `/${value}`;
+  }
+  if (value.toLowerCase().startsWith("public/uploads/")) {
+    return `/${value.slice("public/".length)}`;
+  }
+  return value;
+}
+
 function toCoatingRows(options?: ProductCoatingOption[]) {
   if (!options || options.length === 0) return [];
   return options.map((option) => ({
@@ -124,7 +142,7 @@ export default function AdminProductsPage() {
   }, []);
 
   const formPreviewUrl = useMemo(() => {
-    return form.images[0] || form.image.trim() || null;
+    return normalizeDisplayImageUrl(form.images[0] || form.image.trim() || "") || null;
   }, [form.image, form.images]);
 
   const filteredProducts = useMemo(() => {
@@ -582,7 +600,11 @@ export default function AdminProductsPage() {
                   {form.images.map((url, index) => (
                     <div key={`${url}-${index}`} className="rounded-lg border border-[#D4AF37]/20 bg-black/30 p-2">
                       {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={url} alt={`Görsel ${index + 1}`} className="h-16 w-full object-contain" />
+                      <img
+                        src={normalizeDisplayImageUrl(url)}
+                        alt={`Görsel ${index + 1}`}
+                        className="h-16 w-full object-contain"
+                      />
                       <button
                         type="button"
                         onClick={() => setFormImages(form.images.filter((_, i) => i !== index))}

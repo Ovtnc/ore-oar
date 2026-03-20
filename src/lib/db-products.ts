@@ -18,13 +18,35 @@ function parseStock(input: unknown) {
 
 function parseImageList(input: unknown, fallback?: unknown): string[] {
   const rawList: string[] = [];
+  const uploadsPrefixPattern = /^\/?(?:public\/)?uploads\//i;
+
+  const normalizeImagePath = (value: string) => {
+    const trimmed = value.trim();
+    if (!trimmed) return "";
+
+    // Common legacy formats from admin copy/paste:
+    // - public/uploads/file.jpg
+    // - uploads/file.jpg
+    // - /var/www/oar-ore/public/uploads/file.jpg
+    // Always normalize them to /uploads/file.jpg
+    const marker = "/uploads/";
+    const markerIndex = trimmed.toLowerCase().lastIndexOf(marker);
+    if (markerIndex >= 0) {
+      return trimmed.slice(markerIndex);
+    }
+    if (uploadsPrefixPattern.test(trimmed)) {
+      return `/${trimmed.replace(uploadsPrefixPattern, "uploads/")}`;
+    }
+    return trimmed;
+  };
 
   const addToken = (value: string) => {
     const cleaned = value
       .trim()
       .replace(/^["'\[\]]+/, "")
       .replace(/["'\[\]]+$/, "");
-    if (cleaned) rawList.push(cleaned);
+    const normalized = normalizeImagePath(cleaned);
+    if (normalized) rawList.push(normalized);
   };
 
   const collect = (value: unknown) => {

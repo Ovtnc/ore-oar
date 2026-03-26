@@ -1,0 +1,113 @@
+{
+  "name": "OarOre - Payment Chat Start -> WhatsApp",
+  "nodes": [
+    {
+      "id": "1",
+      "name": "Payment Event Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [220, 260],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "payment-event",
+        "responseMode": "lastNode"
+      }
+    },
+    {
+      "id": "2",
+      "name": "Only payment_chat_started",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [460, 260],
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{$json.event}}",
+              "operation": "equal",
+              "value2": "payment_chat_started"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "3",
+      "name": "Build WhatsApp Message",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [700, 220],
+      "parameters": {
+        "keepOnlySet": true,
+        "values": {
+          "string": [
+            { "name": "orderId", "value": "={{$json.orderId}}" },
+            {
+              "name": "toPhone",
+              "value": "={{($json.customer && $json.customer.phone ? String($json.customer.phone) : '905380482308').replace(/\\D/g,'')}}"
+            },
+            {
+              "name": "message",
+              "value": "={{'Merhaba ' + ($json.customer?.name || 'değerli müşterimiz') + ', siparişin (#' + $json.orderId + ') için ödeme bilgileri aşağıdadır:\\n\\nIBAN: TRXX XXXX XXXX XXXX XXXX XXXX XX\\nAlıcı: Okan Vatancı\\nTutar: ' + ($json.payment?.total || 0) + ' TL\\n\\nÖdeme sonrası dekontu bu sohbete gönder lütfen.'}}"
+            },
+            {
+              "name": "appBaseUrl",
+              "value": "={{$json.appBaseUrl || 'https://senin-domainin.com'}}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "4",
+      "name": "Send WhatsApp (Meta Cloud API)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [980, 220],
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v20.0/{{$env.WA_PHONE_NUMBER_ID}}/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "=Bearer {{$env.WA_TOKEN}}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { messaging_product: 'whatsapp', to: $json.toPhone, type: 'text', text: { body: $json.message } } }}"
+      }
+    },
+    {
+      "id": "5",
+      "name": "Webhook Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1240, 260],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { ok: true } }}"
+      }
+    }
+  ],
+  "connections": {
+    "Payment Event Webhook": {
+      "main": [[{ "node": "Only payment_chat_started", "type": "main", "index": 0 }]]
+    },
+    "Only payment_chat_started": {
+      "main": [
+        [{ "node": "Build WhatsApp Message", "type": "main", "index": 0 }],
+        [{ "node": "Webhook Response", "type": "main", "index": 0 }]
+      ]
+    },
+    "Build WhatsApp Message": {
+      "main": [[{ "node": "Send WhatsApp (Meta Cloud API)", "type": "main", "index": 0 }]]
+    },
+    "Send WhatsApp (Meta Cloud API)": {
+      "main": [[{ "node": "Webhook Response", "type": "main", "index": 0 }]]
+    }
+  },
+  "active": false,
+  "settings": {}
+}

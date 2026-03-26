@@ -209,6 +209,43 @@ function buildPaymentReminderHtml(order: Order, orderId: string, tone: ReminderT
   });
 }
 
+function buildPaymentNotifiedByCustomerHtml(order: Order, orderId: string) {
+  const contentHtml = `
+    <p style="margin:0 0 12px;color:#4f4f4f;font-size:14px;line-height:1.6;">
+      Müşteri <b style="color:#222;">${escapeHtml(order.shipping.fullName)}</b> ödeme yaptığını bildirdi.
+    </p>
+    <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="margin-bottom:14px;border:1px solid #e8d6a8;border-radius:12px;overflow:hidden;background:#fffdf8;">
+      <tr>
+        <td style="padding:12px 14px;font-size:14px;color:#4f4f4f;">
+          <b style="color:#222;">Sipariş Durumu:</b> ${statusPill(order.status)}
+        </td>
+      </tr>
+      <tr>
+        <td style="padding:12px 14px;font-size:14px;color:#4f4f4f;border-top:1px solid #efdfbb;">
+          <b style="color:#222;">Toplam:</b> ${formatCurrency(order.total)}
+        </td>
+      </tr>
+      <tr>
+        <td style="padding:12px 14px;font-size:14px;color:#4f4f4f;border-top:1px solid #efdfbb;">
+          <b style="color:#222;">Müşteri:</b> ${escapeHtml(order.shipping.fullName)} (${escapeHtml(order.shipping.email)})
+        </td>
+      </tr>
+    </table>
+    <p style="margin:0;color:#6e6e6e;font-size:13px;line-height:1.6;">
+      Admin panelden siparişi açıp dekont teyidini tamamlayarak durumu <b style="color:#8f6b19;">Ödeme Alındı</b> adımına taşıyabilirsiniz.
+    </p>
+  `;
+
+  return buildEmailLayout({
+    preheader: `Müşteri ödeme bildirimi yaptı #${orderId}`,
+    title: "Ödeme Bildirimi Alındı",
+    subtitle: "Sipariş için müşteri tarafından ödeme bildirimi yapıldı.",
+    metaLabel: "Sipariş No",
+    metaValue: orderId,
+    contentHtml,
+  });
+}
+
 function buildSupportRequestHtml(input: {
   request: SupportRequest;
   requestId: string;
@@ -418,5 +455,14 @@ export async function sendSupportReplyToCustomer(
 
   const subject = `Oar & Ore - Destek talebinize yanıt (${request.orderId})`;
   const html = buildSupportReplyHtml({ request, requestId, replyMessage });
+  await sendEmail(recipients, subject, html);
+}
+
+export async function sendPaymentNotificationToAdmin(order: Order, orderId: string) {
+  const recipients = await fetchOrderAlertRecipients();
+  if (recipients.length === 0) return;
+
+  const subject = `Oar & Ore - Müşteri ödeme bildirimi yaptı (#${orderId})`;
+  const html = buildPaymentNotifiedByCustomerHtml(order, orderId);
   await sendEmail(recipients, subject, html);
 }

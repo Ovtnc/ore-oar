@@ -87,7 +87,15 @@ export type Order = {
   paymentIbanId?: string;
   paymentIbanLabel?: string;
   paymentIbanAccountHolder?: string;
+  paymentChatStartedAt?: string;
   paymentNotifiedAt?: string;
+  paymentVerifiedAt?: string;
+  paymentPaidAmount?: number;
+  paymentReceiptUrl?: string;
+  paymentTransactionRef?: string;
+  paymentVerificationNote?: string;
+  paymentVerificationSource?: "manual" | "n8n";
+  paymentVerificationFailedAt?: string;
   lastPaymentReminderAt?: string;
   paymentReminderCount?: number;
 };

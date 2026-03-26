@@ -3,9 +3,6 @@ import { NextResponse } from "next/server";
 import { ObjectId } from "mongodb";
 import { normalizeEmail, readSessionToken, SESSION_COOKIE_NAME } from "@/lib/auth";
 import { getMongoClient } from "@/lib/mongodb";
-import { sendPaymentNotificationToAdmin } from "@/lib/email";
-import { emitPaymentNotifiedToN8n } from "@/lib/payment-automation";
-import { Order } from "@/lib/types";
 
 export async function POST(
   _request: Request,
@@ -25,12 +22,11 @@ export async function POST(
   const client = await getMongoClient();
   const db = client.db(process.env.MONGODB_DB ?? "oar-ore");
   const ordersCollection = db.collection("orders");
-
   const objectId = new ObjectId(id);
   const order = await ordersCollection.findOne({ _id: objectId });
 
   if (!order) {
-    return NextResponse.json({ error: "Order not found" }, { status: 404 });
+    return NextResponse.json({ error: "Sipariş bulunamadı." }, { status: 404 });
   }
 
   const emailMatches =
@@ -40,42 +36,18 @@ export async function POST(
     return NextResponse.json({ error: "Bu sipariş için yetkiniz yok." }, { status: 403 });
   }
 
-  if (order.paymentNotifiedAt) {
-    return NextResponse.json({ ok: true, alreadyNotified: true });
-  }
-
-  const notifiedAt = new Date().toISOString();
-  await ordersCollection.updateOne(
-    { _id: objectId },
-    {
-      $set: {
-        paymentNotifiedAt: notifiedAt,
-      },
-    },
-  );
-
-  try {
-    await emitPaymentNotifiedToN8n({
-      orderId: id,
-      order: {
-        ...(order as unknown as Order),
-        paymentNotifiedAt: notifiedAt,
-      },
-    });
-  } catch {
-    // n8n entegrasyon hatası müşteri akışını bozmasın.
-  }
-
-  try {
-    await sendPaymentNotificationToAdmin(
+  const startedAt = order.paymentChatStartedAt || new Date().toISOString();
+  if (!order.paymentChatStartedAt) {
+    await ordersCollection.updateOne(
+      { _id: objectId },
       {
-        ...(order as unknown as Order),
-        paymentNotifiedAt: notifiedAt,
+        $set: {
+          paymentChatStartedAt: startedAt,
+          updatedAt: new Date().toISOString(),
+        },
       },
-      id,
     );
-  } catch {
-    // Admin'e bildirim maili atılamasa bile müşteri akışı devam etsin.
   }
-  return NextResponse.json({ ok: true, alreadyNotified: false });
+
+  return NextResponse.json({ ok: true, paymentChatStartedAt: startedAt });
 }

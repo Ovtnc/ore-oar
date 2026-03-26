@@ -3,6 +3,7 @@ import { getMongoClient } from "@/lib/mongodb";
 const PAYMENT_SETTINGS_DOC_ID = "payment-settings";
 const DEFAULT_IBAN = "TR00 0000 0000 0000 0000 0000 00";
 const MAX_IBAN_COUNT = 20;
+const DEFAULT_WHATSAPP_NUMBER = "905000000000";
 
 export type PaymentIbanEntry = {
   id: string;
@@ -16,6 +17,7 @@ export type PaymentIbanEntry = {
 type PaymentSettingsDoc = {
   _id: string;
   ibans?: PaymentIbanEntry[];
+  whatsappNumber?: string;
   updatedAt?: string;
 };
 
@@ -65,6 +67,30 @@ function clampUsageCount(input: unknown) {
   return Math.max(0, Math.trunc(value));
 }
 
+function normalizeWhatsappNumber(input: unknown) {
+  let value = String(input ?? "")
+    .trim()
+    .replace(/[^\d+]/g, "");
+
+  if (!value) return "";
+  if (value.startsWith("+")) value = value.slice(1);
+  value = value.replace(/\D/g, "");
+
+  if (value.startsWith("0")) {
+    value = `90${value.slice(1)}`;
+  } else if (value.startsWith("5") && value.length === 10) {
+    value = `90${value}`;
+  }
+
+  return value;
+}
+
+function validateWhatsappNumber(input: string) {
+  if (!/^\d{10,15}$/.test(input)) {
+    throw new Error("WhatsApp numarası 10-15 haneli olmalı.");
+  }
+}
+
 function fallbackPaymentIbans(): PaymentIbanEntry[] {
   const fallback = normalizeIban(process.env.NEXT_PUBLIC_IBAN ?? DEFAULT_IBAN) || DEFAULT_IBAN;
   return [
@@ -77,6 +103,13 @@ function fallbackPaymentIbans(): PaymentIbanEntry[] {
       isActive: true,
     },
   ];
+}
+
+function fallbackWhatsappNumber() {
+  const raw = process.env.NEXT_PUBLIC_WHATSAPP_NUMBER ?? process.env.WHATSAPP_ORDER_NUMBER ?? "";
+  const normalized = normalizeWhatsappNumber(raw);
+  if (normalized) return normalized;
+  return DEFAULT_WHATSAPP_NUMBER;
 }
 
 function normalizePaymentIbans(input: unknown) {
@@ -117,19 +150,46 @@ async function getSettingsCollection() {
   return client.db(process.env.MONGODB_DB ?? "oar-ore").collection<PaymentSettingsDoc>("settings");
 }
 
-export async function fetchPaymentIbans() {
+export type PaymentSettings = {
+  ibans: PaymentIbanEntry[];
+  whatsappNumber: string;
+};
+
+export async function fetchPaymentSettings(): Promise<PaymentSettings> {
   try {
     const collection = await getSettingsCollection();
     const doc = await collection.findOne({ _id: PAYMENT_SETTINGS_DOC_ID });
-    const parsed = normalizePaymentIbans(doc?.ibans);
-    return parsed.length > 0 ? parsed : fallbackPaymentIbans();
+    const parsedIbans = normalizePaymentIbans(doc?.ibans);
+    const normalizedWhatsappNumber = normalizeWhatsappNumber(doc?.whatsappNumber);
+    return {
+      ibans: parsedIbans.length > 0 ? parsedIbans : fallbackPaymentIbans(),
+      whatsappNumber: normalizedWhatsappNumber || fallbackWhatsappNumber(),
+    };
   } catch {
-    return fallbackPaymentIbans();
+    return {
+      ibans: fallbackPaymentIbans(),
+      whatsappNumber: fallbackWhatsappNumber(),
+    };
   }
 }
 
+export async function fetchPaymentIbans() {
+  const settings = await fetchPaymentSettings();
+  return settings.ibans;
+}
+
 export async function savePaymentIbans(input: unknown) {
-  const ibans = normalizePaymentIbans(input);
+  const settings = await savePaymentSettings({ ibans: input });
+  return settings.ibans;
+}
+
+export async function savePaymentSettings(input: {
+  ibans?: unknown;
+  whatsappNumber?: unknown;
+}) {
+  const current = await fetchPaymentSettings();
+  const ibans =
+    typeof input.ibans === "undefined" ? current.ibans : normalizePaymentIbans(input.ibans);
   if (ibans.length === 0) {
     throw new Error("En az bir IBAN girmelisiniz.");
   }
@@ -140,19 +200,29 @@ export async function savePaymentIbans(input: unknown) {
     throw new Error("Her IBAN için ad soyad (hesap sahibi) girin.");
   }
 
+  const whatsappNumber =
+    typeof input.whatsappNumber === "undefined"
+      ? current.whatsappNumber
+      : normalizeWhatsappNumber(input.whatsappNumber);
+  if (!whatsappNumber) {
+    throw new Error("WhatsApp numarası zorunlu.");
+  }
+  validateWhatsappNumber(whatsappNumber);
+
   const collection = await getSettingsCollection();
   await collection.updateOne(
     { _id: PAYMENT_SETTINGS_DOC_ID },
     {
       $set: {
         ibans,
+        whatsappNumber,
         updatedAt: new Date().toISOString(),
       },
     },
     { upsert: true },
   );
 
-  return ibans;
+  return { ibans, whatsappNumber };
 }
 
 function selectIbanByUsagePriority(activeIbans: PaymentIbanEntry[]) {
@@ -202,4 +272,9 @@ export async function assignLeastUsedPriorityRandomIban() {
 export function fallbackPaymentIbanValue() {
   const entries = fallbackPaymentIbans();
   return entries[0].iban;
+}
+
+export async function fetchOrderWhatsappNumber() {
+  const settings = await fetchPaymentSettings();
+  return settings.whatsappNumber;
 }

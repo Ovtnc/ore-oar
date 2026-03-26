@@ -12,6 +12,7 @@ type AdminOrder = {
   updatedAt?: string;
   customerNote?: string;
   paymentNotifiedAt?: string;
+  paymentVerifiedAt?: string;
   lastPaymentReminderAt?: string;
   paymentReminderCount?: number;
   shipping: ShippingInfo;
@@ -81,6 +82,8 @@ export default function AdminOrdersPage() {
   const [updatingOrderId, setUpdatingOrderId] = useState<string | null>(null);
   const [deletingOrderId, setDeletingOrderId] = useState<string | null>(null);
   const [remindingOrderId, setRemindingOrderId] = useState<string | null>(null);
+  const [verifyingOrderId, setVerifyingOrderId] = useState<string | null>(null);
+  const [sendingWhatsappOrderId, setSendingWhatsappOrderId] = useState<string | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
 
   useEffect(() => {
@@ -214,6 +217,68 @@ export default function AdminOrdersPage() {
       setError(err instanceof Error ? err.message : "Sipariş silinemedi.");
     } finally {
       setDeletingOrderId(null);
+    }
+  }
+
+  async function verifyPayment(orderId: string) {
+    setVerifyingOrderId(orderId);
+    setError(null);
+    try {
+      const response = await fetch(`/api/admin/orders/${orderId}/verify-payment`, {
+        method: "POST",
+      });
+      const data = (await response.json().catch(() => null)) as
+        | { error?: string; paymentVerifiedAt?: string }
+        | null;
+      if (!response.ok) {
+        throw new Error(data?.error ?? "Dekont teyidi yapılamadı.");
+      }
+      const verifiedAt = data?.paymentVerifiedAt ?? new Date().toISOString();
+      setOrders((prev) =>
+        prev.map((order) =>
+          order._id === orderId
+            ? { ...order, status: "Ödeme Alındı", paymentVerifiedAt: verifiedAt }
+            : order,
+        ),
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Dekont teyidi yapılamadı.");
+    } finally {
+      setVerifyingOrderId(null);
+    }
+  }
+
+  async function sendQuickWhatsappMessage(
+    orderId: string,
+    type: "iban_and_receipt" | "payment_not_received" | "order_created",
+  ) {
+    setSendingWhatsappOrderId(orderId);
+    setError(null);
+    try {
+      const response = await fetch(`/api/admin/orders/${orderId}/whatsapp-message`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ type }),
+      });
+      const data = (await response.json().catch(() => null)) as
+        | { error?: string; whatsappUrl?: string }
+        | null;
+
+      if (!response.ok) {
+        throw new Error(data?.error ?? "WhatsApp mesajı hazırlanamadı.");
+      }
+
+      const url = String(data?.whatsappUrl ?? "").trim();
+      if (!url) throw new Error("WhatsApp bağlantısı oluşturulamadı.");
+
+      const popup = window.open(url, "_blank", "noopener,noreferrer");
+      if (!popup) {
+        window.location.href = url;
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "WhatsApp mesajı hazırlanamadı.");
+    } finally {
+      setSendingWhatsappOrderId(null);
     }
   }
 
@@ -386,6 +451,16 @@ export default function AdminOrdersPage() {
                       >
                         Acil Hatırlatma
                       </button>
+                      {!order.paymentVerifiedAt && (
+                        <button
+                          type="button"
+                          disabled={verifyingOrderId === order._id}
+                          onClick={() => verifyPayment(order._id)}
+                          className="rounded-lg border border-emerald-400/45 px-2.5 py-1 text-[11px] text-emerald-200 transition hover:bg-emerald-500/10 disabled:opacity-50"
+                        >
+                          {verifyingOrderId === order._id ? "İşleniyor..." : "Ödeme Alındı Olarak İşaretle"}
+                        </button>
+                      )}
                     </div>
                   )}
                   {order.status === "Beklemede" && order.paymentNotifiedAt && (
@@ -393,11 +468,42 @@ export default function AdminOrdersPage() {
                       Müşteri ödeme bildirimi yaptı: {formatDate(order.paymentNotifiedAt)}
                     </p>
                   )}
+                  {order.paymentVerifiedAt && (
+                    <p className="text-[10px] text-emerald-300/80">
+                      Dekont teyit edildi: {formatDate(order.paymentVerifiedAt)}
+                    </p>
+                  )}
                   {order.lastPaymentReminderAt && (
                     <p className="text-[10px] text-zinc-500">
                       Son hatırlatma: {formatDate(order.lastPaymentReminderAt)} ({order.paymentReminderCount ?? 1})
                     </p>
                   )}
+                  <div className="mt-1 flex flex-wrap items-center gap-2 md:justify-end">
+                    <button
+                      type="button"
+                      disabled={sendingWhatsappOrderId === order._id}
+                      onClick={() => sendQuickWhatsappMessage(order._id, "iban_and_receipt")}
+                      className="rounded-lg border border-emerald-400/45 px-2.5 py-1 text-[11px] text-emerald-200 transition hover:bg-emerald-500/10 disabled:opacity-50"
+                    >
+                      {sendingWhatsappOrderId === order._id ? "Hazırlanıyor..." : "WA: IBAN + Dekont"}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={sendingWhatsappOrderId === order._id}
+                      onClick={() => sendQuickWhatsappMessage(order._id, "payment_not_received")}
+                      className="rounded-lg border border-amber-400/40 px-2.5 py-1 text-[11px] text-amber-200 transition hover:bg-amber-500/10 disabled:opacity-50"
+                    >
+                      WA: Ödeme Gelmedi
+                    </button>
+                    <button
+                      type="button"
+                      disabled={sendingWhatsappOrderId === order._id}
+                      onClick={() => sendQuickWhatsappMessage(order._id, "order_created")}
+                      className="rounded-lg border border-sky-400/40 px-2.5 py-1 text-[11px] text-sky-200 transition hover:bg-sky-500/10 disabled:opacity-50"
+                    >
+                      WA: Sipariş Oluştu
+                    </button>
+                  </div>
                   <button
                     type="button"
                     disabled={deletingOrderId === order._id}

@@ -2,8 +2,40 @@ import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { ObjectId } from "mongodb";
 import { normalizeEmail, readSessionToken, SESSION_COOKIE_NAME } from "@/lib/auth";
-import { assignLeastUsedPriorityRandomIban, fallbackPaymentIbanValue } from "@/lib/db-payment-settings";
+import {
+  assignLeastUsedPriorityRandomIban,
+  fallbackPaymentIbanValue,
+  fetchOrderWhatsappNumber,
+} from "@/lib/db-payment-settings";
 import { getMongoClient } from "@/lib/mongodb";
+import { Order } from "@/lib/types";
+
+function formatCurrency(value: unknown) {
+  return `${Number(value ?? 0).toLocaleString("tr-TR")} TL`;
+}
+
+function buildWhatsappMessage(order: Order, orderId: string) {
+  const itemLines = (order.items ?? [])
+    .map((item) => {
+      const coatingLabel = item.coatingName ? ` (${item.coatingName})` : "";
+      const qty = Number(item.quantity ?? 0);
+      const lineTotal = Number(item.price ?? 0) * qty;
+      return `- ${item.name}${coatingLabel} x${qty} (${formatCurrency(lineTotal)})`;
+    })
+    .join("\n");
+
+  return [
+    "Merhaba, siparişimin ödeme sürecini başlatmak istiyorum.",
+    `Sipariş No: #${orderId}`,
+    `Müşteri: ${order.shipping.fullName}`,
+    `Telefon: ${order.shipping.phone}`,
+    `Toplam: ${formatCurrency(order.total)}`,
+    "Ürünler:",
+    itemLines || "-",
+    "Ödeme bilgilerini ve IBAN detayını paylaşır mısınız?",
+    "Ödeme sonrası dekontumu bu sohbetten ileteceğim.",
+  ].join("\n");
+}
 
 export async function GET(
   _request: Request,
@@ -37,34 +69,55 @@ export async function GET(
     return NextResponse.json({ error: "Bu sipariş için yetkiniz yok." }, { status: 403 });
   }
 
-  if (order.paymentIban && String(order.paymentIban).trim()) {
-    return NextResponse.json({
-      iban: String(order.paymentIban),
-      ibanLabel: String(order.paymentIbanLabel ?? ""),
-      accountHolderName: String(order.paymentIbanAccountHolder ?? ""),
-      ibanId: String(order.paymentIbanId ?? ""),
-    });
+  let resolvedIban = String(order.paymentIban ?? "").trim();
+  let resolvedIbanId = String(order.paymentIbanId ?? "").trim();
+  let resolvedIbanLabel = String(order.paymentIbanLabel ?? "").trim();
+  let resolvedAccountHolder = String(order.paymentIbanAccountHolder ?? "").trim();
+  let usedFallback = false;
+
+  if (!resolvedIban) {
+    // Eski siparişler için atanmamışsa burada bir kez atanır.
+    const selected = await assignLeastUsedPriorityRandomIban();
+    resolvedIban = selected.iban;
+    resolvedIbanId = selected.id;
+    resolvedIbanLabel = selected.label;
+    resolvedAccountHolder = selected.accountHolderName;
+    usedFallback = fallbackPaymentIbanValue() === selected.iban;
+    await ordersCollection.updateOne(
+      { _id: objectId },
+      {
+        $set: {
+          paymentIban: selected.iban,
+          paymentIbanId: selected.id,
+          paymentIbanLabel: selected.label,
+          paymentIbanAccountHolder: selected.accountHolderName,
+        },
+      },
+    );
   }
 
-  // Eski siparişler için atanmamışsa burada bir kez atanır.
-  const selected = await assignLeastUsedPriorityRandomIban();
-  await ordersCollection.updateOne(
-    { _id: objectId },
+  const whatsappNumber = await fetchOrderWhatsappNumber();
+  const whatsappMessage = buildWhatsappMessage(
     {
-      $set: {
-        paymentIban: selected.iban,
-        paymentIbanId: selected.id,
-        paymentIbanLabel: selected.label,
-        paymentIbanAccountHolder: selected.accountHolderName,
-      },
+      ...(order as unknown as Order),
+      _id: undefined,
     },
+    id,
   );
+  const whatsappUrl = `https://wa.me/${whatsappNumber}?text=${encodeURIComponent(whatsappMessage)}`;
 
   return NextResponse.json({
-    iban: selected.iban,
-    ibanLabel: selected.label,
-    accountHolderName: selected.accountHolderName,
-    ibanId: selected.id,
-    fallback: fallbackPaymentIbanValue() === selected.iban,
+    whatsappNumber,
+    whatsappMessage,
+    whatsappUrl,
+    // Backward-compatible internal fields (UI bunları artık göstermiyor).
+    iban: resolvedIban,
+    ibanLabel: resolvedIbanLabel,
+    accountHolderName: resolvedAccountHolder,
+    ibanId: resolvedIbanId,
+    fallback: usedFallback,
+    paymentChatStartedAt: order.paymentChatStartedAt ?? null,
+    paymentNotifiedAt: order.paymentNotifiedAt ?? null,
+    paymentVerifiedAt: order.paymentVerifiedAt ?? null,
   });
 }

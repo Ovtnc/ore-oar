@@ -9,6 +9,13 @@ type AdminOrder = {
   status: OrderStatus;
   total: number;
   createdAt: string;
+  updatedAt?: string;
+  paymentVerifiedAt?: string;
+  paymentPaidAmount?: number;
+  paymentIban?: string;
+  paymentIbanId?: string;
+  paymentIbanLabel?: string;
+  paymentIbanAccountHolder?: string;
   shipping: ShippingInfo;
   items: OrderItem[];
 };
@@ -119,6 +126,14 @@ function statusMeta(status: OrderStatus) {
   }
 }
 
+function parseIsoDate(value: unknown) {
+  const raw = String(value ?? "").trim();
+  if (!raw) return null;
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return parsed;
+}
+
 export default function AdminPanelPage() {
   const [orders, setOrders] = useState<AdminOrder[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
@@ -138,6 +153,7 @@ export default function AdminPanelPage() {
   const [paymentIbansLoading, setPaymentIbansLoading] = useState(true);
   const [paymentIbansSaving, setPaymentIbansSaving] = useState(false);
   const [paymentIbansNotice, setPaymentIbansNotice] = useState<PaymentNotice | null>(null);
+  const [paymentWhatsappNumber, setPaymentWhatsappNumber] = useState("");
   const [orderAlertRecipientsText, setOrderAlertRecipientsText] = useState("");
   const [orderAlertRecipients, setOrderAlertRecipients] = useState<string[]>([]);
   const [orderAlertLoading, setOrderAlertLoading] = useState(true);
@@ -274,7 +290,7 @@ export default function AdminPanelPage() {
       try {
         const response = await fetch("/api/admin/settings/payment", { cache: "no-store" });
         const data = (await response.json().catch(() => null)) as
-          | { ibans?: PaymentIbanFormRow[]; error?: string }
+          | { ibans?: PaymentIbanFormRow[]; whatsappNumber?: string; error?: string }
           | null;
         if (!response.ok) {
           throw new Error(data?.error ?? "IBAN bilgisi alınamadı.");
@@ -303,6 +319,7 @@ export default function AdminPanelPage() {
                 },
               ],
         );
+        setPaymentWhatsappNumber(String(data?.whatsappNumber ?? "").trim());
       } catch (err) {
         if (!mounted) return;
         setPaymentIbansNotice({
@@ -353,15 +370,16 @@ export default function AdminPanelPage() {
       const response = await fetch("/api/admin/settings/payment", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ibans: normalizedRows }),
+        body: JSON.stringify({ ibans: normalizedRows, whatsappNumber: paymentWhatsappNumber }),
       });
       const data = (await response.json().catch(() => null)) as
-        | { ibans?: PaymentIbanFormRow[]; error?: string }
+        | { ibans?: PaymentIbanFormRow[]; whatsappNumber?: string; error?: string }
         | null;
       if (!response.ok) {
         throw new Error(data?.error ?? "IBAN güncellenemedi.");
       }
       setPaymentIbans((data?.ibans as PaymentIbanFormRow[] | undefined) ?? normalizedRows);
+      setPaymentWhatsappNumber(String(data?.whatsappNumber ?? paymentWhatsappNumber).trim());
       setPaymentIbansNotice({ type: "success", message: "IBAN havuzu güncellendi." });
     } catch (err) {
       setPaymentIbansNotice({
@@ -486,6 +504,148 @@ export default function AdminPanelPage() {
     return { total, fresh, active };
   }, [supportRequests]);
 
+  const revenueInsights = useMemo(() => {
+    const paidStatuses = new Set<OrderStatus>([
+      "Ödeme Alındı",
+      "Sipariş Hazırlanıyor",
+      "Kargoya Verildi",
+      "Tamamlandı",
+    ]);
+
+    const now = new Date();
+    const todayKey = `${now.getFullYear()}-${now.getMonth()}-${now.getDate()}`;
+    const startOfWeek = new Date(now);
+    const day = startOfWeek.getDay();
+    const diffToMonday = day === 0 ? 6 : day - 1;
+    startOfWeek.setDate(startOfWeek.getDate() - diffToMonday);
+    startOfWeek.setHours(0, 0, 0, 0);
+
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const startOfYear = new Date(now.getFullYear(), 0, 1);
+
+    let collectedTotal = 0;
+    let today = 0;
+    let week = 0;
+    let month = 0;
+    let year = 0;
+    let collectedCount = 0;
+    const dailyTotals = new Map<string, number>();
+
+    const ibanMetaById = new Map<
+      string,
+      { label: string; accountHolderName: string; iban: string; usageCount: number }
+    >();
+    const ibanMetaByIban = new Map<
+      string,
+      { label: string; accountHolderName: string; iban: string; usageCount: number }
+    >();
+    for (const row of paymentIbans) {
+      const normalizedIban = String(row.iban ?? "").replace(/\s+/g, "").toUpperCase();
+      const meta = {
+        label: row.label,
+        accountHolderName: row.accountHolderName,
+        iban: row.iban,
+        usageCount: row.usageCount,
+      };
+      ibanMetaById.set(row.id, meta);
+      if (normalizedIban) {
+        ibanMetaByIban.set(normalizedIban, meta);
+      }
+    }
+
+    const ibanAggregates = new Map<
+      string,
+      { key: string; label: string; iban: string; accountHolderName: string; total: number; orderCount: number }
+    >();
+
+    for (const order of orders) {
+      if (!paidStatuses.has(order.status)) continue;
+      const amount = Number(order.paymentPaidAmount ?? order.total ?? 0);
+      if (!Number.isFinite(amount) || amount <= 0) continue;
+
+      const orderDate =
+        parseIsoDate(order.paymentVerifiedAt) ??
+        parseIsoDate(order.updatedAt) ??
+        parseIsoDate(order.createdAt);
+      if (!orderDate) continue;
+
+      collectedTotal += amount;
+      collectedCount += 1;
+      if (orderDate >= startOfYear) year += amount;
+      if (orderDate >= startOfMonth) month += amount;
+      if (orderDate >= startOfWeek) week += amount;
+
+      const orderKey = `${orderDate.getFullYear()}-${orderDate.getMonth()}-${orderDate.getDate()}`;
+      if (orderKey === todayKey) today += amount;
+      dailyTotals.set(orderKey, (dailyTotals.get(orderKey) ?? 0) + amount);
+
+      const orderIbanId = String(order.paymentIbanId ?? "").trim();
+      const orderIban = String(order.paymentIban ?? "").trim();
+      const normalizedOrderIban = orderIban.replace(/\s+/g, "").toUpperCase();
+      const ibanKey = orderIbanId || orderIban || "unknown";
+      const fallbackMeta = (orderIbanId ? ibanMetaById.get(orderIbanId) : undefined)
+        ?? (normalizedOrderIban ? ibanMetaByIban.get(normalizedOrderIban) : undefined);
+      const label =
+        String(order.paymentIbanLabel ?? "").trim() ||
+        fallbackMeta?.label ||
+        (ibanKey === "unknown" ? "IBAN Bilinmiyor" : "Tanımsız Hesap");
+      const accountHolderName =
+        String(order.paymentIbanAccountHolder ?? "").trim() ||
+        fallbackMeta?.accountHolderName ||
+        "—";
+      const iban = String(order.paymentIban ?? "").trim() || fallbackMeta?.iban || "—";
+
+      const row = ibanAggregates.get(ibanKey);
+      if (!row) {
+        ibanAggregates.set(ibanKey, {
+          key: ibanKey,
+          label,
+          iban,
+          accountHolderName,
+          total: amount,
+          orderCount: 1,
+        });
+      } else {
+        row.total += amount;
+        row.orderCount += 1;
+      }
+    }
+
+    const ibanRows = Array.from(ibanAggregates.values())
+      .sort((a, b) => b.total - a.total)
+      .map((row) => ({
+        ...row,
+        share: collectedTotal > 0 ? Math.round((row.total / collectedTotal) * 100) : 0,
+      }));
+
+    const last7Days = Array.from({ length: 7 }).map((_, index) => {
+      const dayDate = new Date(now);
+      dayDate.setDate(now.getDate() - (6 - index));
+      const dayKey = `${dayDate.getFullYear()}-${dayDate.getMonth()}-${dayDate.getDate()}`;
+      const label = dayDate.toLocaleDateString("tr-TR", {
+        day: "2-digit",
+        month: "2-digit",
+      });
+      const total = dailyTotals.get(dayKey) ?? 0;
+      return { key: dayKey, label, total };
+    });
+
+    const last7DaysMax = Math.max(...last7Days.map((day) => day.total), 0);
+
+    return {
+      collectedTotal,
+      collectedCount,
+      collectedAverage: collectedCount > 0 ? Math.round(collectedTotal / collectedCount) : 0,
+      today,
+      week,
+      month,
+      year,
+      ibanRows,
+      last7Days,
+      last7DaysMax,
+    };
+  }, [orders, paymentIbans]);
+
   const recentOrdersTotalPages = useMemo(
     () => Math.max(1, Math.ceil(orders.length / RECENT_ORDERS_PAGE_SIZE)),
     [orders.length],
@@ -580,6 +740,19 @@ export default function AdminPanelPage() {
           >
             <div className="min-h-0">
               <form onSubmit={onSavePaymentIbans} className="space-y-3">
+                <div className="rounded-xl border border-[#D4AF37]/20 bg-black/25 p-3">
+                  <label className="block text-xs tracking-[0.18em] text-zinc-400">WhatsApp Sipariş Hattı</label>
+                  <input
+                    value={paymentWhatsappNumber}
+                    onChange={(event) => setPaymentWhatsappNumber(event.target.value)}
+                    placeholder="905xxxxxxxxx"
+                    disabled={paymentIbansLoading || paymentIbansSaving}
+                    className="mt-2 w-full rounded-lg border border-[#D4AF37]/25 bg-black/35 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-[#D4AF37]"
+                  />
+                  <p className="mt-1 text-[11px] text-zinc-500">
+                    Ödeme sayfasındaki WhatsApp dekont butonu bu numarayı kullanır.
+                  </p>
+                </div>
                 {paymentIbansLoading ? (
                   <div className="space-y-3">
                     <SkeletonRow />
@@ -877,6 +1050,135 @@ export default function AdminPanelPage() {
           <p className="text-xs tracking-[0.22em] text-cyan-200">YENİ TALEP</p>
           <p className="mt-2 text-3xl font-semibold text-cyan-100">{loading ? "…" : supportStats.fresh}</p>
         </div>
+      </div>
+
+      <div className="mb-6 rounded-2xl border border-[#D4AF37]/25 bg-zinc-900/60 p-5">
+        <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <p className="text-sm font-semibold text-zinc-100">Tahsilat Ciro Analizi</p>
+            <p className="mt-1 text-xs text-zinc-400">
+              Ödeme alınan siparişlere göre günlük, haftalık, aylık ve yıllık ciro görünümü.
+            </p>
+          </div>
+          <div className="text-right">
+            <p className="text-xs tracking-[0.2em] text-[#D4AF37]">TAHSİL EDİLEN TOPLAM</p>
+            <p className="mt-1 text-xl font-semibold text-zinc-100">
+              {loading ? "…" : `${revenueInsights.collectedTotal.toLocaleString("tr-TR")} TL`}
+            </p>
+          </div>
+        </div>
+
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="rounded-xl border border-[#D4AF37]/20 bg-black/25 p-4">
+            <p className="text-xs tracking-[0.18em] text-zinc-400">BUGÜN</p>
+            <p className="mt-2 text-2xl font-semibold text-zinc-100">
+              {loading ? "…" : `${revenueInsights.today.toLocaleString("tr-TR")} TL`}
+            </p>
+          </div>
+          <div className="rounded-xl border border-[#D4AF37]/20 bg-black/25 p-4">
+            <p className="text-xs tracking-[0.18em] text-zinc-400">BU HAFTA</p>
+            <p className="mt-2 text-2xl font-semibold text-zinc-100">
+              {loading ? "…" : `${revenueInsights.week.toLocaleString("tr-TR")} TL`}
+            </p>
+          </div>
+          <div className="rounded-xl border border-[#D4AF37]/20 bg-black/25 p-4">
+            <p className="text-xs tracking-[0.18em] text-zinc-400">BU AY</p>
+            <p className="mt-2 text-2xl font-semibold text-zinc-100">
+              {loading ? "…" : `${revenueInsights.month.toLocaleString("tr-TR")} TL`}
+            </p>
+          </div>
+          <div className="rounded-xl border border-[#D4AF37]/20 bg-black/25 p-4">
+            <p className="text-xs tracking-[0.18em] text-zinc-400">BU YIL</p>
+            <p className="mt-2 text-2xl font-semibold text-zinc-100">
+              {loading ? "…" : `${revenueInsights.year.toLocaleString("tr-TR")} TL`}
+            </p>
+          </div>
+        </div>
+
+        <div className="mt-4 rounded-xl border border-[#D4AF37]/20 bg-black/20 p-4">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <p className="text-xs tracking-[0.2em] text-[#D4AF37]">SON 7 GÜN TAHSİLAT</p>
+            <p className="text-xs text-zinc-500">
+              Max: {loading ? "…" : `${revenueInsights.last7DaysMax.toLocaleString("tr-TR")} TL`}
+            </p>
+          </div>
+          <div className="grid grid-cols-7 gap-2">
+            {(loading ? Array.from({ length: 7 }).map((_, i) => ({ key: `skeleton-${i}`, label: "--", total: 0 })) : revenueInsights.last7Days).map(
+              (day) => {
+                const heightPercent =
+                  loading || revenueInsights.last7DaysMax <= 0
+                    ? 10
+                    : Math.max(10, Math.round((day.total / revenueInsights.last7DaysMax) * 100));
+                return (
+                  <div key={day.key} className="flex flex-col items-center gap-2">
+                    <div className="flex h-28 w-full items-end rounded-lg border border-[#D4AF37]/15 bg-zinc-900/50 p-1">
+                      <div
+                        className="w-full rounded-md bg-gradient-to-t from-[#D4AF37] to-[#F3D47B] shadow-[0_0_18px_rgba(212,175,55,0.25)]"
+                        style={{ height: `${heightPercent}%` }}
+                        title={loading ? "Yükleniyor..." : `${day.total.toLocaleString("tr-TR")} TL`}
+                      />
+                    </div>
+                    <p className="text-[10px] text-zinc-400">{day.label}</p>
+                    <p className="text-[10px] text-zinc-500">
+                      {loading ? "…" : `${day.total.toLocaleString("tr-TR")} TL`}
+                    </p>
+                  </div>
+                );
+              },
+            )}
+          </div>
+        </div>
+      </div>
+
+      <div className="mb-6 rounded-2xl border border-[#D4AF37]/25 bg-zinc-900/60 p-5">
+        <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <p className="text-sm font-semibold text-zinc-100">IBAN Bazlı Tahsilat</p>
+            <p className="mt-1 text-xs text-zinc-400">
+              Hangi hesaba ne kadar ödeme geldiğini ve adet dağılımını gösterir.
+            </p>
+          </div>
+          <p className="text-xs text-zinc-500">
+            Tahsil edilen sipariş: {loading ? "…" : revenueInsights.collectedCount}
+          </p>
+        </div>
+
+        {loading ? (
+          <div className="py-8 text-center text-zinc-400">Yükleniyor...</div>
+        ) : revenueInsights.ibanRows.length === 0 ? (
+          <div className="rounded-xl border border-[#D4AF37]/20 bg-black/20 p-4 text-sm text-zinc-400">
+            Henüz IBAN bazlı tahsilat verisi oluşmadı.
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-sm">
+              <thead>
+                <tr className="text-left text-xs uppercase tracking-[0.16em] text-zinc-400">
+                  <th className="px-3 py-2">Hesap</th>
+                  <th className="px-3 py-2">Alıcı</th>
+                  <th className="px-3 py-2">IBAN</th>
+                  <th className="px-3 py-2 text-right">Sipariş</th>
+                  <th className="px-3 py-2 text-right">Tutar</th>
+                  <th className="px-3 py-2 text-right">Pay</th>
+                </tr>
+              </thead>
+              <tbody>
+                {revenueInsights.ibanRows.map((row) => (
+                  <tr key={row.key} className="border-t border-[#D4AF37]/15 text-zinc-200">
+                    <td className="px-3 py-2">{row.label}</td>
+                    <td className="px-3 py-2">{row.accountHolderName}</td>
+                    <td className="px-3 py-2 font-mono text-xs text-zinc-400">{row.iban}</td>
+                    <td className="px-3 py-2 text-right">{row.orderCount}</td>
+                    <td className="px-3 py-2 text-right font-semibold text-[#D4AF37]">
+                      {row.total.toLocaleString("tr-TR")} TL
+                    </td>
+                    <td className="px-3 py-2 text-right text-zinc-300">%{row.share}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
       <div className="mb-6 grid gap-6 lg:grid-cols-[1fr_0.95fr]">

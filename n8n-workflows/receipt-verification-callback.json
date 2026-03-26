@@ -1,0 +1,90 @@
+{
+  "name": "OarOre - Receipt Verification Callback",
+  "nodes": [
+    {
+      "id": "1",
+      "name": "Receipt Verify Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [220, 260],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "receipt-verify-result",
+        "responseMode": "lastNode"
+      }
+    },
+    {
+      "id": "2",
+      "name": "Prepare Callback Payload",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [500, 260],
+      "parameters": {
+        "keepOnlySet": true,
+        "values": {
+          "string": [
+            { "name": "orderId", "value": "={{$json.orderId}}" },
+            { "name": "receiptUrl", "value": "={{$json.receiptUrl || ''}}" },
+            { "name": "transactionRef", "value": "={{$json.transactionRef || ''}}" },
+            { "name": "note", "value": "={{$json.note || 'n8n doğrulaması tamamlandı'}}" },
+            {
+              "name": "appBaseUrl",
+              "value": "={{$json.appBaseUrl || 'https://senin-domainin.com'}}"
+            }
+          ],
+          "boolean": [
+            { "name": "verified", "value": "={{$json.verified === true}}" }
+          ],
+          "number": [
+            { "name": "paidAmount", "value": "={{Number($json.paidAmount || 0)}}" }
+          ]
+        }
+      }
+    },
+    {
+      "id": "3",
+      "name": "Callback -> OarOre",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [780, 260],
+      "parameters": {
+        "method": "POST",
+        "url": "={{$json.appBaseUrl + '/api/integrations/n8n/payment-verification'}}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "x-n8n-secret", "value": "={{$env.N8N_PAYMENT_VERIFY_SECRET}}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { orderId: $json.orderId, verified: $json.verified, receiptUrl: $json.receiptUrl, transactionRef: $json.transactionRef, note: $json.note, paidAmount: $json.paidAmount, verifiedAt: new Date().toISOString() } }}"
+      }
+    },
+    {
+      "id": "4",
+      "name": "Webhook Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1040, 260],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { ok: true } }}"
+      }
+    }
+  ],
+  "connections": {
+    "Receipt Verify Webhook": {
+      "main": [[{ "node": "Prepare Callback Payload", "type": "main", "index": 0 }]]
+    },
+    "Prepare Callback Payload": {
+      "main": [[{ "node": "Callback -> OarOre", "type": "main", "index": 0 }]]
+    },
+    "Callback -> OarOre": {
+      "main": [[{ "node": "Webhook Response", "type": "main", "index": 0 }]]
+    }
+  },
+  "active": false,
+  "settings": {}
+}

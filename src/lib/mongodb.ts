@@ -7,17 +7,31 @@ if (typeof dns.setDefaultResultOrder === "function") {
 }
 
 // systemd-resolved / VPS resolver bozuksa getaddrinfo ENOTFOUND olur. Örn: MONGODB_DNS_SERVERS=1.1.1.1,8.8.8.8
-function applyMongoDnsFromEnv() {
+// Production + Atlas (*.mongodb.net): .env eksik/inline sorunlarında 1.1.1.1 / 8.8.8.8 (MONGODB_DNS_USE_SYSTEM=1 ile kapat)
+const ATLAS_DNS_FALLBACK = ["1.1.1.1", "8.8.8.8"];
+
+function configureMongoDns(uriForAtlasCheck: string | undefined) {
+  if (process.env.MONGODB_DNS_USE_SYSTEM === "1") {
+    return;
+  }
   const raw = process.env.MONGODB_DNS_SERVERS?.trim();
-  const servers = raw
+  const explicit = raw
     ? raw.split(",").map((s) => s.trim()).filter(Boolean)
     : [];
-  if (servers.length > 0) {
-    dns.setServers(servers);
+  if (explicit.length > 0) {
+    dns.setServers(explicit);
+    return;
+  }
+  if (
+    process.env.NODE_ENV === "production" &&
+    uriForAtlasCheck &&
+    uriForAtlasCheck.includes(".mongodb.net")
+  ) {
+    dns.setServers(ATLAS_DNS_FALLBACK);
   }
 }
 
-applyMongoDnsFromEnv();
+configureMongoDns(process.env.MONGODB_URI);
 
 let clientPromise: Promise<MongoClient> | null = null;
 
@@ -42,8 +56,8 @@ export function getMongoClient() {
 
   if (clientPromise) return clientPromise;
 
-  // İlk bağlantıdan hemen önce tekrar uygula (.env Next tarafından modül load'dan sonra da yüklenebilir).
-  applyMongoDnsFromEnv();
+  // İlk bağlantıdan hemen önce tekrar uygula (.env / Atlas DNS yedeği).
+  configureMongoDns(uri);
 
   const clientOptions: MongoClientOptions = {};
   if (process.env.MONGODB_FORCE_IPV4 === "1") {

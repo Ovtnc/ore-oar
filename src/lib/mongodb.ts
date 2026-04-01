@@ -33,6 +33,20 @@ function configureMongoDns(uriForAtlasCheck: string | undefined) {
 function createAtlasMongoLookup(): LookupFunction {
   return (hostname, options, callback) => {
     configureMongoDns(process.env.MONGODB_URI);
+
+    const preferV4 =
+      hostname.endsWith(".mongodb.net") || process.env.MONGODB_FORCE_IPV4 === "1";
+    if (preferV4) {
+      dns.resolve4(hostname, (err4, addresses) => {
+        if (!err4 && addresses?.length) {
+          callback(null, addresses[0], 4);
+          return;
+        }
+        dns.lookup(hostname, { family: 4, verbatim: false }, callback);
+      });
+      return;
+    }
+
     const merged: dns.LookupOptions =
       process.env.MONGODB_FORCE_IPV4 === "1"
         ? { ...options, family: 4, verbatim: false }

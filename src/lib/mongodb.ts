@@ -65,16 +65,17 @@ export function getMongoClient() {
     throw new Error("Missing MONGODB_URI in environment variables.");
   }
 
-  // Placeholder kontrolü (örn. Atlas dokümanlarındaki örnek değerler).
-  const looksLikePlaceholder =
-    uri.includes("cluster.example.mongodb.net") ||
-    uri.includes("username:password@") ||
-    uri.includes("<db_password>") ||
-    (uri.includes("<") && uri.includes(">"));
-
-  if (looksLikePlaceholder) {
+  // Atlas / doküman şablonları (örnek URI deploy'a kopyalanmasın).
+  const placeholderHints = [
+    { test: () => uri.includes("cluster.example.mongodb.net"), hint: "cluster.example.mongodb.net örnek host" },
+    { test: () => uri.includes("username:password@"), hint: "username:password@ örnek kullanıcı" },
+    { test: () => uri.includes("<db_password>"), hint: "<db_password> yerine gerçek şifre (özel karakterleri URL-encode)" },
+    { test: () => uri.includes("<password>"), hint: "<password> placeholder kaldırılmalı" },
+  ];
+  const matched = placeholderHints.find((p) => p.test());
+  if (matched) {
     throw new Error(
-      "MongoDB bağlantı bilgileri placeholder görünüyor. Lütfen MONGODB_URI'yi gerçek Atlas connection string'i ile değiştir."
+      `MONGODB_URI hâlâ şablon içeriyor (${matched.hint}). Sunucudaki .env satırını düzeltip pm2 restart oar-ore --update-env yap.`
     );
   }
 

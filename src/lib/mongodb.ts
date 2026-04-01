@@ -7,13 +7,17 @@ if (typeof dns.setDefaultResultOrder === "function") {
 }
 
 // systemd-resolved / VPS resolver bozuksa getaddrinfo ENOTFOUND olur. Örn: MONGODB_DNS_SERVERS=1.1.1.1,8.8.8.8
-const mongoDnsRaw = process.env.MONGODB_DNS_SERVERS?.trim();
-const mongoDnsServers = mongoDnsRaw
-  ? mongoDnsRaw.split(",").map((s) => s.trim()).filter(Boolean)
-  : [];
-if (mongoDnsServers.length > 0) {
-  dns.setServers(mongoDnsServers);
+function applyMongoDnsFromEnv() {
+  const raw = process.env.MONGODB_DNS_SERVERS?.trim();
+  const servers = raw
+    ? raw.split(",").map((s) => s.trim()).filter(Boolean)
+    : [];
+  if (servers.length > 0) {
+    dns.setServers(servers);
+  }
 }
+
+applyMongoDnsFromEnv();
 
 let clientPromise: Promise<MongoClient> | null = null;
 
@@ -37,6 +41,9 @@ export function getMongoClient() {
   }
 
   if (clientPromise) return clientPromise;
+
+  // İlk bağlantıdan hemen önce tekrar uygula (.env Next tarafından modül load'dan sonra da yüklenebilir).
+  applyMongoDnsFromEnv();
 
   const clientOptions: MongoClientOptions = {};
   if (process.env.MONGODB_FORCE_IPV4 === "1") {

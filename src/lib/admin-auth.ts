@@ -7,7 +7,8 @@ import { normalizeEmail, readSessionToken, SESSION_COOKIE_NAME } from "@/lib/aut
 import { AuthUser } from "@/lib/types";
 
 function getConfiguredAdminEmail() {
-  const value = process.env.ADMIN_ALLOWED_EMAIL?.trim() || process.env.ADMIN_EMAIL?.trim() || "";
+  const value =
+    process.env["ADMIN_ALLOWED_EMAIL"]?.trim() || process.env["ADMIN_EMAIL"]?.trim() || "";
   return normalizeEmail(value);
 }
 

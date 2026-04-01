@@ -1,8 +1,13 @@
+import fs from "node:fs";
+import path from "node:path";
 import { ObjectId } from "mongodb";
 import { getMongoClient } from "@/lib/mongodb";
 import { toSafePrice } from "@/lib/price";
 import { products as fallbackProducts } from "@/lib/products";
 import { Product, ProductCategory, ProductCoatingOption } from "@/lib/types";
+
+/** Repoda hazır küçük ikon; /products/*.jpg sunucuda yoksa kartta kırık img yerine bunu kullan. */
+const PRODUCT_IMAGE_PLACEHOLDER = "/file.svg";
 
 type ProductDoc = Product & {
   _id?: ObjectId;
@@ -21,8 +26,16 @@ function parseImageList(input: unknown, fallback?: unknown): string[] {
   const uploadsPrefixPattern = /^\/?(?:public\/)?uploads\//i;
 
   const normalizeImagePath = (value: string) => {
-    const trimmed = value.trim();
+    let trimmed = value.trim();
     if (!trimmed) return "";
+
+    // Tam URL (localhost veya canlı domain) → yalnız path
+    const asUrl = trimmed.match(/^https?:\/\/[^/]+(\/.*)?$/i);
+    if (asUrl) {
+      const pathPart = (asUrl[1] ?? "").trim();
+      if (!pathPart || pathPart === "/") return "";
+      trimmed = pathPart;
+    }
 
     // Common legacy formats from admin copy/paste:
     // - public/uploads/file.jpg
@@ -37,7 +50,8 @@ function parseImageList(input: unknown, fallback?: unknown): string[] {
     if (uploadsPrefixPattern.test(trimmed)) {
       return `/${trimmed.replace(uploadsPrefixPattern, "uploads/")}`;
     }
-    return trimmed;
+    if (trimmed.startsWith("/")) return trimmed;
+    return `/${trimmed.replace(/^\/+/, "")}`;
   };
 
   const addToken = (value: string) => {
@@ -95,6 +109,25 @@ function parseImageList(input: unknown, fallback?: unknown): string[] {
   return Array.from(new Set(rawList));
 }
 
+function resolveServeableImagePath(webPath: string): string {
+  const t = webPath.trim();
+  if (!t) return PRODUCT_IMAGE_PLACEHOLDER;
+  if (t.startsWith("http://") || t.startsWith("https://")) {
+    return t;
+  }
+  if (!t.startsWith("/") || t.startsWith("//")) {
+    return PRODUCT_IMAGE_PLACEHOLDER;
+  }
+  const relative = t.replace(/^\//, "");
+  const local = path.join(process.cwd(), "public", relative);
+  try {
+    if (fs.existsSync(local)) return t;
+  } catch {
+    /* ignore */
+  }
+  return PRODUCT_IMAGE_PLACEHOLDER;
+}
+
 function parseCoatingOptions(input: unknown): ProductCoatingOption[] {
   let rawList: unknown[] = [];
   if (Array.isArray(input)) {
@@ -132,8 +165,9 @@ function parseCoatingOptions(input: unknown): ProductCoatingOption[] {
 }
 
 function normalizeProduct(doc: Partial<ProductDoc>): Product {
-  const images = parseImageList(doc.images, doc.image);
-  const primaryImage = images[0] ?? "/products/aether.jpg";
+  const rawImages = parseImageList(doc.images, doc.image);
+  const images = rawImages.map(resolveServeableImagePath);
+  const primaryImage = images[0] ?? PRODUCT_IMAGE_PLACEHOLDER;
 
   return {
     id: String(doc.id ?? doc.slug ?? ""),
@@ -172,7 +206,7 @@ function normalizeSlug(input: string) {
 
 function parseCategory(input: string): ProductCategory {
   const normalized = input.trim();
-  const allowed: ProductCategory[] = ["Kolye", "Bileklik", "Pin", "Küpe", "Anahtarlık"];
+  const allowed: ProductCategory[] = ["Kolye", "Bileklik", "Pin", "Küpe", "Anahtarlık", "Aksesuar"];
   if (!allowed.includes(normalized as ProductCategory)) {
     // Fallback to first category.
     return "Kolye";

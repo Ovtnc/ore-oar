@@ -1,4 +1,4 @@
-/** PM2: sunucuda `pm2 start ecosystem.config.cjs` — Nginx 3001 bekliyorsa şart. */
+/** PM2: sunucuda `pm2 start ecosystem.config.cjs` — Nginx `proxy_pass` bu porta (3000) işaret etmeli. */
 module.exports = {
   apps: [
     {

@@ -7,7 +7,8 @@ if (typeof dns.setDefaultResultOrder === "function") {
 }
 
 // systemd-resolved / VPS resolver bozuksa getaddrinfo ENOTFOUND olur. Örn: MONGODB_DNS_SERVERS=1.1.1.1,8.8.8.8
-// Production + Atlas (*.mongodb.net): .env eksik/inline sorunlarında 1.1.1.1 / 8.8.8.8 (MONGODB_DNS_USE_SYSTEM=1 ile kapat)
+// Atlas (*.mongodb.net): VPS stub resolver ENOTFOUND — 1.1.1.1 / 8.8.8.8 (MONGODB_DNS_USE_SYSTEM=1 ile kapat)
+// Not: NODE_ENV'e bağlamıyoruz; PM2/next start altında production kontrolü güvenilir olmayabiliyor.
 const ATLAS_DNS_FALLBACK = ["1.1.1.1", "8.8.8.8"];
 
 function configureMongoDns(uriForAtlasCheck: string | undefined) {
@@ -22,11 +23,7 @@ function configureMongoDns(uriForAtlasCheck: string | undefined) {
     dns.setServers(explicit);
     return;
   }
-  if (
-    process.env.NODE_ENV === "production" &&
-    uriForAtlasCheck &&
-    uriForAtlasCheck.includes(".mongodb.net")
-  ) {
+  if (uriForAtlasCheck && uriForAtlasCheck.includes(".mongodb.net")) {
     dns.setServers(ATLAS_DNS_FALLBACK);
   }
 }

@@ -204,11 +204,18 @@ function normalizeSlug(input: string) {
     .replace(/^-+|-+$/g, "");
 }
 
+const PRODUCT_CATEGORIES = new Set([
+  "Kolye",
+  "Bileklik",
+  "Pin",
+  "Küpe",
+  "Anahtarlık",
+  "Aksesuar",
+]);
+
 function parseCategory(input: string): ProductCategory {
   const normalized = input.trim();
-  const allowed: ProductCategory[] = ["Kolye", "Bileklik", "Pin", "Küpe", "Anahtarlık", "Aksesuar"];
-  if (!allowed.includes(normalized as ProductCategory)) {
-    // Fallback to first category.
+  if (!PRODUCT_CATEGORIES.has(normalized)) {
     return "Kolye";
   }
   return normalized as ProductCategory;

@@ -3,7 +3,8 @@ export type ProductCategory =
   | "Bileklik"
   | "Pin"
   | "Küpe"
-  | "Anahtarlık";
+  | "Anahtarlık"
+  | "Aksesuar";
 
 export type ProductCoatingOption = {
   id: string;

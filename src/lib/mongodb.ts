@@ -13,10 +13,10 @@ if (typeof dns.setDefaultResultOrder === "function") {
 const ATLAS_DNS_FALLBACK = ["1.1.1.1", "8.8.8.8"];
 
 function configureMongoDns(uriForAtlasCheck: string | undefined) {
-  if (process.env.MONGODB_DNS_USE_SYSTEM === "1") {
+  if (process.env["MONGODB_DNS_USE_SYSTEM"] === "1") {
     return;
   }
-  const raw = process.env.MONGODB_DNS_SERVERS?.trim();
+  const raw = process.env["MONGODB_DNS_SERVERS"]?.trim();
   const explicit = raw
     ? raw.split(",").map((s) => s.trim()).filter(Boolean)
     : [];
@@ -29,13 +29,23 @@ function configureMongoDns(uriForAtlasCheck: string | undefined) {
   }
 }
 
-/** Sürücü bazı ortamlarda global dns.setServers'ı atlayabiliyor; lookup her çözümlemede resolver'ı uygular. */
+/**
+ * Her DNS sorgusundan önce resolver'ı ayarla. Next derlemesi `process.env.MONGODB_URI` vb. lookup
+ * içinde sabitleyebildiği için URI'ye bağlanmıyoruz; köşeli parantez + her atlas host'ta yedek DNS.
+ */
 function createAtlasMongoLookup(): LookupFunction {
   return (hostname, options, callback) => {
-    configureMongoDns(process.env.MONGODB_URI);
+    if (process.env["MONGODB_DNS_USE_SYSTEM"] !== "1") {
+      const raw = process.env["MONGODB_DNS_SERVERS"]?.trim();
+      const explicit = raw
+        ? raw.split(",").map((s) => s.trim()).filter(Boolean)
+        : [];
+      dns.setServers(explicit.length > 0 ? explicit : ATLAS_DNS_FALLBACK);
+    }
 
     const preferV4 =
-      hostname.endsWith(".mongodb.net") || process.env.MONGODB_FORCE_IPV4 === "1";
+      hostname.endsWith(".mongodb.net") ||
+      process.env["MONGODB_FORCE_IPV4"] === "1";
     if (preferV4) {
       dns.resolve4(hostname, (err4, addresses) => {
         if (!err4 && addresses?.length) {
@@ -48,19 +58,19 @@ function createAtlasMongoLookup(): LookupFunction {
     }
 
     const merged: dns.LookupOptions =
-      process.env.MONGODB_FORCE_IPV4 === "1"
+      process.env["MONGODB_FORCE_IPV4"] === "1"
         ? { ...options, family: 4, verbatim: false }
         : { ...options, verbatim: false };
     dns.lookup(hostname, merged, callback);
   };
 }
 
-configureMongoDns(process.env.MONGODB_URI);
+configureMongoDns(process.env["MONGODB_URI"]);
 
 let clientPromise: Promise<MongoClient> | null = null;
 
 export function getMongoClient() {
-  const uri = process.env.MONGODB_URI;
+  const uri = process.env["MONGODB_URI"];
   if (!uri) {
     throw new Error("Missing MONGODB_URI in environment variables.");
   }
@@ -85,11 +95,15 @@ export function getMongoClient() {
   configureMongoDns(uri);
 
   const clientOptions: MongoClientOptions = {};
-  if (process.env.MONGODB_FORCE_IPV4 === "1") {
+  if (process.env["MONGODB_FORCE_IPV4"] === "1") {
     clientOptions.family = 4;
     clientOptions.autoSelectFamily = false;
   }
   if (uri.includes(".mongodb.net")) {
+    if (process.env["MONGODB_ALLOW_IPV6"] !== "1") {
+      clientOptions.family = 4;
+      clientOptions.autoSelectFamily = false;
+    }
     clientOptions.lookup = createAtlasMongoLookup();
   }
 

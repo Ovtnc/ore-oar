@@ -1,6 +1,8 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  // Node DNS / mongodb sürücüsünün paketlenmesini azalt (VPS DNS yolu)
+  serverExternalPackages: ["mongodb"],
   poweredByHeader: false,
   async headers() {
     return [

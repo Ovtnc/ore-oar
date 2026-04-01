@@ -6,6 +6,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
+    "start:prod": "next start -p 3001",
     "lint": "eslint",
     "typecheck": "pnpm exec tsc --noEmit",
     "check": "npm run lint && npm run build"

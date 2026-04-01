@@ -7,9 +7,10 @@ if (typeof dns.setDefaultResultOrder === "function") {
 }
 
 // systemd-resolved / VPS resolver bozuksa getaddrinfo ENOTFOUND olur. Örn: MONGODB_DNS_SERVERS=1.1.1.1,8.8.8.8
-const mongoDnsServers = process.env.MONGODB_DNS_SERVERS?.split(",")
-  .map((s) => s.trim())
-  .filter(Boolean);
+const mongoDnsRaw = process.env.MONGODB_DNS_SERVERS?.trim();
+const mongoDnsServers = mongoDnsRaw
+  ? mongoDnsRaw.split(",").map((s) => s.trim()).filter(Boolean)
+  : [];
 if (mongoDnsServers.length > 0) {
   dns.setServers(mongoDnsServers);
 }

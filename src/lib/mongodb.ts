@@ -1,4 +1,10 @@
-import { MongoClient } from "mongodb";
+import dns from "node:dns";
+import { MongoClient, type MongoClientOptions } from "mongodb";
+
+// VPS'lerde IPv6 DNS/rotası kırıkken Node önce AAAA denerse MongoDB TLS "secureConnect" timeout verebilir.
+if (typeof dns.setDefaultResultOrder === "function") {
+  dns.setDefaultResultOrder("ipv4first");
+}
 
 let clientPromise: Promise<MongoClient> | null = null;
 
@@ -23,9 +29,13 @@ export function getMongoClient() {
 
   if (clientPromise) return clientPromise;
 
-  // Bazı Atlas cluster/connection string türlerinde `serverApi` seçenekleri
-  // sorun çıkarabiliyor. Şimdilik en geniş uyumluluk için bu opsiyonları kaldırıyoruz.
-  const client = new MongoClient(uri);
+  const clientOptions: MongoClientOptions = {};
+  if (process.env.MONGODB_FORCE_IPV4 === "1") {
+    clientOptions.family = 4;
+    clientOptions.autoSelectFamily = false;
+  }
+
+  const client = new MongoClient(uri, clientOptions);
 
   clientPromise = globalThis.mongoClientPromise ?? client.connect();
   if (process.env.NODE_ENV !== "production") {

@@ -6,6 +6,14 @@ if (typeof dns.setDefaultResultOrder === "function") {
   dns.setDefaultResultOrder("ipv4first");
 }
 
+// systemd-resolved / VPS resolver bozuksa getaddrinfo ENOTFOUND olur. Örn: MONGODB_DNS_SERVERS=1.1.1.1,8.8.8.8
+const mongoDnsServers = process.env.MONGODB_DNS_SERVERS?.split(",")
+  .map((s) => s.trim())
+  .filter(Boolean);
+if (mongoDnsServers.length > 0) {
+  dns.setServers(mongoDnsServers);
+}
+
 let clientPromise: Promise<MongoClient> | null = null;
 
 export function getMongoClient() {

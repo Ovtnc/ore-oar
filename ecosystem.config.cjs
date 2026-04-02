@@ -12,6 +12,7 @@ module.exports = {
       cwd: __dirname,
       script: path.join(__dirname, "scripts/pm2-next-start.sh"),
       interpreter: "bash",
+      env_file: path.join(__dirname, ".env"),
       env: { NODE_ENV: "production" },
     },
   ],

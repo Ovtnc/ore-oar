@@ -84,6 +84,7 @@ export type Order = {
   subtotal?: number;
   shippingFee?: number;
   createdAt: string;
+  updatedAt?: string;
   paymentIban?: string;
   paymentIbanId?: string;
   paymentIbanLabel?: string;

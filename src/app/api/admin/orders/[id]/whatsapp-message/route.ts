@@ -1,12 +1,10 @@
-import { ObjectId } from "mongodb";
 import { NextResponse } from "next/server";
 import { requireAdminApiAccess } from "@/lib/admin-auth";
 import { assignLeastUsedPriorityRandomIban } from "@/lib/db-payment-settings";
-import { getMongoClient } from "@/lib/mongodb";
+import { getOrderById, updateOrderFields } from "@/lib/db-orders";
 import { Order } from "@/lib/types";
 
 type QuickMessageType = "iban_and_receipt" | "payment_not_received" | "order_created";
-type DbOrder = Omit<Order, "_id"> & { _id: ObjectId };
 
 function normalizePhoneForWhatsapp(input: unknown) {
   let value = String(input ?? "")
@@ -35,7 +33,7 @@ function parseMessageType(input: unknown): QuickMessageType {
   return "iban_and_receipt";
 }
 
-function buildMessage(order: DbOrder, orderId: string, type: QuickMessageType, paymentInfo?: {
+function buildMessage(order: Order, orderId: string, type: QuickMessageType, paymentInfo?: {
   iban: string;
   label: string;
   accountHolderName: string;
@@ -74,26 +72,15 @@ function buildMessage(order: DbOrder, orderId: string, type: QuickMessageType, p
     .join("\n");
 }
 
-export async function POST(
-  request: Request,
-  { params }: { params: Promise<{ id: string }> },
-) {
+export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const guard = await requireAdminApiAccess();
   if (!guard.ok) return guard.response;
 
   const { id } = await params;
-  if (!ObjectId.isValid(id)) {
-    return NextResponse.json({ error: "Geçersiz sipariş." }, { status: 400 });
-  }
-
   const body = (await request.json().catch(() => null)) as { type?: string } | null;
   const type = parseMessageType(body?.type);
 
-  const client = await getMongoClient();
-  const db = client.db(process.env.MONGODB_DB ?? "oar-ore");
-  const ordersCollection = db.collection<DbOrder>("orders");
-  const objectId = new ObjectId(id);
-  const order = await ordersCollection.findOne({ _id: objectId });
+  const order = await getOrderById(id);
   if (!order) {
     return NextResponse.json({ error: "Sipariş bulunamadı." }, { status: 404 });
   }
@@ -119,19 +106,12 @@ export async function POST(
       accountHolderName: selected.accountHolderName,
     };
 
-    // Siparişe hangi IBAN gönderildiğini kaydedelim.
-    await ordersCollection.updateOne(
-      { _id: objectId },
-      {
-        $set: {
-          paymentIban: selected.iban,
-          paymentIbanId: selected.id,
-          paymentIbanLabel: selected.label,
-          paymentIbanAccountHolder: selected.accountHolderName,
-          updatedAt: new Date().toISOString(),
-        },
-      },
-    );
+    await updateOrderFields(id, {
+      paymentIban: selected.iban,
+      paymentIbanId: selected.id,
+      paymentIbanLabel: selected.label,
+      paymentIbanAccountHolder: selected.accountHolderName,
+    });
   }
 
   const message = buildMessage(order, id, type, paymentInfo);

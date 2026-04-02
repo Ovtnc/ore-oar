@@ -150,6 +150,23 @@ export const products: Product[] = [
     tags: ["Keskin Hat", "Hediye", "Limited"],
     isLimited: true,
   },
+  {
+    id: "p10",
+    slug: "pin-rozet-atelier",
+    name: "Pin Rozet Atelier",
+    category: "Pin",
+    description:
+      "Atölye üretimi pirinç rozet pin; ceket, çanta ve gömlekte mimari bir vurgu oluşturur.",
+    price: 1750,
+    material: "Masif pirinç",
+    image: "/products/monolith.jpg",
+    collection: "Atelier Rozet",
+    finish: "Ayna polisaj",
+    stock: 25,
+    leadTimeDays: 2,
+    tags: ["Pin", "Rozet", "Atölye", "Yeni"],
+    isNew: true,
+  },
 ];
 
 export function getProductBySlug(slug: string) {

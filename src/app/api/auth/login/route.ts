@@ -27,7 +27,7 @@ export async function POST(request: Request) {
     }
 
     const user = {
-      id: String(userDoc._id),
+      id: userDoc.id,
       name: userDoc.name,
       email: userDoc.email,
     };
@@ -41,4 +41,3 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Giriş yapılamadı." }, { status: 500 });
   }
 }
-

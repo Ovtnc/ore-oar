@@ -1,18 +1,29 @@
-import fs from "node:fs";
-import path from "node:path";
-import { ObjectId } from "mongodb";
-import { getMongoClient } from "@/lib/mongodb";
+import { prisma } from "@/lib/prisma";
 import { toSafePrice } from "@/lib/price";
 import { products as fallbackProducts } from "@/lib/products";
+import { fromJson, toInputJson } from "@/lib/db-json";
 import { Product, ProductCategory, ProductCoatingOption } from "@/lib/types";
 
-/** Repoda hazır küçük ikon; /products/*.jpg sunucuda yoksa kartta kırık img yerine bunu kullan. */
 const PRODUCT_IMAGE_PLACEHOLDER = "/file.svg";
 
-type ProductDoc = Product & {
-  _id?: ObjectId;
-  createdAt?: string;
-  updatedAt?: string;
+type ProductRow = {
+  id: string;
+  slug: string;
+  name: string;
+  category: string;
+  description: string;
+  price: number;
+  material: string;
+  image: string;
+  images: string[];
+  collection: string;
+  finish: string;
+  stock: number;
+  leadTimeDays: number;
+  tags: string[];
+  coatingOptions: unknown;
+  isNew: boolean;
+  isLimited: boolean;
 };
 
 function parseStock(input: unknown) {
@@ -29,7 +40,6 @@ function parseImageList(input: unknown, fallback?: unknown): string[] {
     let trimmed = value.trim();
     if (!trimmed) return "";
 
-    // Tam URL (localhost veya canlı domain) → yalnız path
     const asUrl = trimmed.match(/^https?:\/\/[^/]+(\/.*)?$/i);
     if (asUrl) {
       const pathPart = (asUrl[1] ?? "").trim();
@@ -37,11 +47,6 @@ function parseImageList(input: unknown, fallback?: unknown): string[] {
       trimmed = pathPart;
     }
 
-    // Common legacy formats from admin copy/paste:
-    // - public/uploads/file.jpg
-    // - uploads/file.jpg
-    // - /var/www/oar-ore/public/uploads/file.jpg
-    // Always normalize them to /uploads/file.jpg
     const marker = "/uploads/";
     const markerIndex = trimmed.toLowerCase().lastIndexOf(marker);
     if (markerIndex >= 0) {
@@ -75,11 +80,10 @@ function parseImageList(input: unknown, fallback?: unknown): string[] {
 
       if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
         try {
-          const parsed = JSON.parse(trimmed) as unknown;
-          collect(parsed);
+          collect(JSON.parse(trimmed) as unknown);
           return;
         } catch {
-          // JSON parse edilemezse normal ayırma akışına düş.
+          // normal parse
         }
       }
 
@@ -111,21 +115,13 @@ function parseImageList(input: unknown, fallback?: unknown): string[] {
 
 function resolveServeableImagePath(webPath: string): string {
   const t = webPath.trim();
-  if (!t) return PRODUCT_IMAGE_PLACEHOLDER;
-  if (t.startsWith("http://") || t.startsWith("https://")) {
-    return t;
-  }
-  if (!t.startsWith("/") || t.startsWith("//")) {
-    return PRODUCT_IMAGE_PLACEHOLDER;
-  }
-  const relative = t.replace(/^\//, "");
-  const local = path.join(process.cwd(), "public", relative);
-  try {
-    if (fs.existsSync(local)) return t;
-  } catch {
-    /* ignore */
-  }
-  return PRODUCT_IMAGE_PLACEHOLDER;
+  if (!t) return "";
+  if (t.startsWith("http://") || t.startsWith("https://")) return t;
+  if (t.toLowerCase().startsWith("uploads/")) return `/${t}`;
+  if (t.toLowerCase().startsWith("public/uploads/")) return `/${t.slice("public/".length)}`;
+  if (t.startsWith("/")) return t;
+  if (t.startsWith("//")) return "";
+  return `/${t.replace(/^\/+/, "")}`;
 }
 
 function parseCoatingOptions(input: unknown): ProductCoatingOption[] {
@@ -164,32 +160,6 @@ function parseCoatingOptions(input: unknown): ProductCoatingOption[] {
     .filter((item): item is ProductCoatingOption => item !== null);
 }
 
-function normalizeProduct(doc: Partial<ProductDoc>): Product {
-  const rawImages = parseImageList(doc.images, doc.image);
-  const images = rawImages.map(resolveServeableImagePath);
-  const primaryImage = images[0] ?? PRODUCT_IMAGE_PLACEHOLDER;
-
-  return {
-    id: String(doc.id ?? doc.slug ?? ""),
-    slug: String(doc.slug ?? ""),
-    name: String(doc.name ?? ""),
-    category: parseCategory(String(doc.category ?? "Kolye")),
-    description: String(doc.description ?? ""),
-    price: toSafePrice(doc.price),
-    material: String(doc.material ?? ""),
-    image: primaryImage,
-    images,
-    collection: String(doc.collection ?? "Atelier 01"),
-    finish: String(doc.finish ?? "Ayna polisaj"),
-    stock: parseStock(doc.stock ?? 12),
-    leadTimeDays: Number(doc.leadTimeDays ?? 3),
-    tags: Array.isArray(doc.tags) ? doc.tags : [],
-    coatingOptions: parseCoatingOptions(doc.coatingOptions),
-    isNew: Boolean(doc.isNew),
-    isLimited: Boolean(doc.isLimited),
-  };
-}
-
 function normalizeSlug(input: string) {
   return input
     .trim()
@@ -221,7 +191,33 @@ function parseCategory(input: string): ProductCategory {
   return normalized as ProductCategory;
 }
 
-function toProductPayload(body: unknown): Omit<ProductDoc, "createdAt" | "updatedAt"> {
+function normalizeProduct(doc: Partial<ProductRow>): Product {
+  const rawImages = parseImageList(doc.images, doc.image);
+  const images = Array.from(new Set(rawImages.map(resolveServeableImagePath).filter(Boolean)));
+  const primaryImage = images[0] ?? PRODUCT_IMAGE_PLACEHOLDER;
+
+  return {
+    id: String(doc.id ?? doc.slug ?? ""),
+    slug: String(doc.slug ?? ""),
+    name: String(doc.name ?? ""),
+    category: parseCategory(String(doc.category ?? "Kolye")),
+    description: String(doc.description ?? ""),
+    price: toSafePrice(doc.price),
+    material: String(doc.material ?? ""),
+    image: primaryImage,
+    images,
+    collection: String(doc.collection ?? "Atelier 01"),
+    finish: String(doc.finish ?? "Ayna polisaj"),
+    stock: parseStock(doc.stock ?? 12),
+    leadTimeDays: Number(doc.leadTimeDays ?? 3),
+    tags: Array.isArray(doc.tags) ? doc.tags : [],
+    coatingOptions: parseCoatingOptions(doc.coatingOptions),
+    isNew: Boolean(doc.isNew),
+    isLimited: Boolean(doc.isLimited),
+  };
+}
+
+function toProductPayload(body: unknown): Omit<Product, "id"> & { id?: string } {
   const b = body as Record<string, unknown> | undefined;
   const name = String(b?.name ?? "").trim();
   const slugFromBody = String(b?.slug ?? "").trim();
@@ -241,7 +237,7 @@ function toProductPayload(body: unknown): Omit<ProductDoc, "createdAt" | "update
   const primaryImage = images[0] ?? "/products/aether.jpg";
 
   return {
-    id: slug,
+    id: typeof b?.id === "string" && b.id.trim() ? b.id.trim() : undefined,
     slug,
     name,
     category: parseCategory(String(b?.category ?? "Kolye")),
@@ -261,34 +257,30 @@ function toProductPayload(body: unknown): Omit<ProductDoc, "createdAt" | "update
   };
 }
 
-async function safeGetCollection() {
-  const client = await getMongoClient();
-  return client.db(process.env.MONGODB_DB ?? "oar-ore").collection<ProductDoc>("products");
-}
-
 export async function fetchProducts(): Promise<Product[]> {
   try {
-    const collection = await safeGetCollection();
-    const docs = await collection.find({}).sort({ createdAt: -1 }).toArray();
-    // DB erişimi başarılı ama ürün yoksa boş liste dön.
-    if (!docs.length) return [];
-    return docs.map((doc) => normalizeProduct({ ...doc, _id: doc._id }));
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "";
-    if (message.includes("placeholder")) return [];
+    const rows = await prisma.product.findMany({ orderBy: { createdAt: "desc" } });
+    if (!rows.length) return [];
+    return rows.map((row) =>
+      normalizeProduct({
+        ...row,
+        coatingOptions: fromJson(row.coatingOptions, []),
+      }),
+    );
+  } catch {
     return fallbackProducts.map((product) => normalizeProduct(product));
   }
 }
 
 export async function fetchProductBySlug(slug: string): Promise<Product | null> {
   try {
-    const collection = await safeGetCollection();
-    const doc = await collection.findOne({ slug });
-    if (!doc) return null;
-    return normalizeProduct(doc);
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "";
-    if (message.includes("placeholder")) return null;
+    const row = await prisma.product.findUnique({ where: { slug } });
+    if (!row) return null;
+    return normalizeProduct({
+      ...row,
+      coatingOptions: fromJson(row.coatingOptions, []),
+    });
+  } catch {
     const fallback = fallbackProducts.find((p) => p.slug === slug);
     return fallback ? normalizeProduct(fallback) : null;
   }
@@ -297,34 +289,90 @@ export async function fetchProductBySlug(slug: string): Promise<Product | null> 
 export async function createProduct(body: unknown): Promise<Product> {
   const payload = toProductPayload(body);
 
-  const collection = await safeGetCollection();
-  const now = new Date().toISOString();
+  const row = await prisma.product.upsert({
+    where: { slug: payload.slug },
+    update: {
+      name: payload.name,
+      category: payload.category,
+      description: payload.description,
+      price: payload.price,
+      material: payload.material,
+      image: payload.image,
+      images: payload.images ?? [],
+      collection: payload.collection,
+      finish: payload.finish,
+      stock: payload.stock,
+      leadTimeDays: payload.leadTimeDays,
+      tags: payload.tags,
+      coatingOptions: toInputJson(payload.coatingOptions ?? []),
+      isNew: payload.isNew ?? false,
+      isLimited: payload.isLimited ?? false,
+    },
+    create: {
+      id: payload.id,
+      slug: payload.slug,
+      name: payload.name,
+      category: payload.category,
+      description: payload.description,
+      price: payload.price,
+      material: payload.material,
+      image: payload.image,
+      images: payload.images ?? [],
+      collection: payload.collection,
+      finish: payload.finish,
+      stock: payload.stock,
+      leadTimeDays: payload.leadTimeDays,
+      tags: payload.tags,
+      coatingOptions: toInputJson(payload.coatingOptions ?? []),
+      isNew: payload.isNew ?? false,
+      isLimited: payload.isLimited ?? false,
+    },
+  });
 
-  const doc: ProductDoc = {
-    ...payload,
-    createdAt: now,
-    updatedAt: now,
-  };
-
-  await collection.updateOne({ slug: doc.slug }, { $set: doc }, { upsert: true });
-  return normalizeProduct(doc);
+  return normalizeProduct({
+    ...row,
+    coatingOptions: fromJson(row.coatingOptions, []),
+  });
 }
 
 export async function updateProduct(slug: string, body: unknown): Promise<Product | null> {
+  const existing = await prisma.product.findUnique({ where: { slug } });
+  if (!existing) return null;
+
   const payload = toProductPayload(body);
-  const now = new Date().toISOString();
+  const row = await prisma.product.update({
+    where: { slug },
+    data: {
+      slug: payload.slug,
+      name: payload.name,
+      category: payload.category,
+      description: payload.description,
+      price: payload.price,
+      material: payload.material,
+      image: payload.image,
+      images: payload.images ?? [],
+      collection: payload.collection,
+      finish: payload.finish,
+      stock: payload.stock,
+      leadTimeDays: payload.leadTimeDays,
+      tags: payload.tags,
+      coatingOptions: toInputJson(payload.coatingOptions ?? []),
+      isNew: payload.isNew ?? false,
+      isLimited: payload.isLimited ?? false,
+    },
+  });
 
-  const collection = await safeGetCollection();
-  await collection.updateOne({ slug }, { $set: { ...payload, updatedAt: now } });
-
-  // Slug değişebilir; güncel kaydı payload.slug ile buluyoruz.
-  const updated = await collection.findOne({ slug: payload.slug });
-  if (!updated) return null;
-  return normalizeProduct(updated);
+  return normalizeProduct({
+    ...row,
+    coatingOptions: fromJson(row.coatingOptions, []),
+  });
 }
 
 export async function deleteProduct(slug: string): Promise<boolean> {
-  const collection = await safeGetCollection();
-  const result = await collection.deleteOne({ slug });
-  return result.deletedCount > 0;
+  try {
+    await prisma.product.delete({ where: { slug } });
+    return true;
+  } catch {
+    return false;
+  }
 }

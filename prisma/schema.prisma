@@ -1,0 +1,110 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String   @id @default(cuid())
+  name         String
+  email        String   @unique
+  passwordHash String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  orders       Order[]
+
+  @@map("users")
+}
+
+model Product {
+  id             String   @id @default(cuid())
+  slug           String   @unique
+  name           String
+  category       String
+  description    String
+  price          Int
+  material       String
+  image          String
+  images         String[]
+  collection     String
+  finish         String
+  stock          Int      @default(0)
+  leadTimeDays   Int      @default(3)
+  tags           String[]
+  coatingOptions Json?
+  isNew          Boolean  @default(false)
+  isLimited      Boolean  @default(false)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@map("products")
+}
+
+model Order {
+  id                        String   @id @default(cuid())
+  userId                    String?
+  userEmail                 String?
+  items                     Json
+  customerNote              String?
+  shipping                  Json
+  status                    String
+  total                     Int
+  subtotal                  Int?
+  shippingFee               Int?
+  createdAt                 DateTime @default(now())
+  updatedAt                 DateTime @updatedAt
+  paymentIban               String?
+  paymentIbanId             String?
+  paymentIbanLabel          String?
+  paymentIbanAccountHolder  String?
+  paymentChatStartedAt      DateTime?
+  paymentNotifiedAt         DateTime?
+  paymentVerifiedAt         DateTime?
+  paymentPaidAmount         Int?
+  paymentReceiptUrl         String?
+  paymentTransactionRef     String?
+  paymentVerificationNote   String?
+  paymentVerificationSource String?
+  paymentVerificationFailedAt DateTime?
+  lastPaymentReminderAt     DateTime?
+  paymentReminderCount      Int      @default(0)
+  user                      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([status, createdAt(sort: Desc)])
+  @@map("orders")
+}
+
+model SupportRequest {
+  id             String   @id @default(cuid())
+  orderId        String
+  userId         String
+  userEmail      String
+  userName       String
+  productId      String
+  productName    String
+  productVariant String?
+  subject        String
+  message        String
+  replies        Json?
+  lastReplyAt    DateTime?
+  replyCount     Int      @default(0)
+  status         String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([orderId])
+  @@index([status, createdAt(sort: Desc)])
+  @@map("support_requests")
+}
+
+model AppSetting {
+  key       String   @id
+  value     Json
+  updatedAt DateTime @updatedAt
+
+  @@map("app_settings")
+}

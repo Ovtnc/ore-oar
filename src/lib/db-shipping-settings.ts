@@ -1,4 +1,4 @@
-import { getMongoClient } from "@/lib/mongodb";
+import { readSettingWithTimestamp, writeSetting } from "@/lib/db-settings";
 
 const SHIPPING_SETTINGS_DOC_ID = "shipping-settings";
 const DEFAULT_SHIPPING_FEE = 120;
@@ -7,13 +7,6 @@ const DEFAULT_FREE_SHIPPING_THRESHOLD = 2500;
 export type ShippingPricingSettings = {
   shippingFee: number;
   freeShippingThreshold: number;
-  updatedAt?: string;
-};
-
-type ShippingSettingsDoc = {
-  _id: string;
-  shippingFee?: number;
-  freeShippingThreshold?: number;
   updatedAt?: string;
 };
 
@@ -29,11 +22,6 @@ function normalizeSettings(input: Partial<ShippingPricingSettings> | null | unde
     freeShippingThreshold: sanitizeMoney(input?.freeShippingThreshold, DEFAULT_FREE_SHIPPING_THRESHOLD),
     updatedAt: input?.updatedAt,
   };
-}
-
-async function settingsCollection() {
-  const client = await getMongoClient();
-  return client.db(process.env.MONGODB_DB ?? "oar-ore").collection<ShippingSettingsDoc>("settings");
 }
 
 export function defaultShippingPricingSettings(): ShippingPricingSettings {
@@ -52,15 +40,11 @@ export function defaultShippingPricingSettings(): ShippingPricingSettings {
 export async function fetchShippingPricingSettings() {
   const fallback = defaultShippingPricingSettings();
   try {
-    const collection = await settingsCollection();
-    const doc = await collection.findOne({ _id: SHIPPING_SETTINGS_DOC_ID });
-    if (!doc) return fallback;
-
-    return normalizeSettings({
-      shippingFee: doc.shippingFee,
-      freeShippingThreshold: doc.freeShippingThreshold,
-      updatedAt: doc.updatedAt,
-    });
+    const { value, updatedAt } = await readSettingWithTimestamp<ShippingPricingSettings>(
+      SHIPPING_SETTINGS_DOC_ID,
+      fallback,
+    );
+    return normalizeSettings({ ...value, updatedAt });
   } catch {
     return fallback;
   }
@@ -73,23 +57,13 @@ export async function saveShippingPricingSettings(input: Partial<ShippingPricing
     freeShippingThreshold: input.freeShippingThreshold ?? fallback.freeShippingThreshold,
   });
 
-  const collection = await settingsCollection();
-  const updatedAt = new Date().toISOString();
-
-  await collection.updateOne(
-    { _id: SHIPPING_SETTINGS_DOC_ID },
-    {
-      $set: {
-        shippingFee: normalized.shippingFee,
-        freeShippingThreshold: normalized.freeShippingThreshold,
-        updatedAt,
-      },
-    },
-    { upsert: true },
-  );
+  await writeSetting(SHIPPING_SETTINGS_DOC_ID, {
+    shippingFee: normalized.shippingFee,
+    freeShippingThreshold: normalized.freeShippingThreshold,
+  });
 
   return {
     ...normalized,
-    updatedAt,
+    updatedAt: new Date().toISOString(),
   };
 }

@@ -1,4 +1,4 @@
-import { getMongoClient } from "@/lib/mongodb";
+import { readSetting, writeSetting } from "@/lib/db-settings";
 
 const PAYMENT_SETTINGS_DOC_ID = "payment-settings";
 const DEFAULT_IBAN = "TR00 0000 0000 0000 0000 0000 00";
@@ -14,11 +14,9 @@ export type PaymentIbanEntry = {
   isActive: boolean;
 };
 
-type PaymentSettingsDoc = {
-  _id: string;
-  ibans?: PaymentIbanEntry[];
-  whatsappNumber?: string;
-  updatedAt?: string;
+type PaymentSettings = {
+  ibans: PaymentIbanEntry[];
+  whatsappNumber: string;
 };
 
 function normalizeIban(input: unknown) {
@@ -145,22 +143,11 @@ function normalizePaymentIbans(input: unknown) {
   return Array.from(uniqueById.values());
 }
 
-async function getSettingsCollection() {
-  const client = await getMongoClient();
-  return client.db(process.env.MONGODB_DB ?? "oar-ore").collection<PaymentSettingsDoc>("settings");
-}
-
-export type PaymentSettings = {
-  ibans: PaymentIbanEntry[];
-  whatsappNumber: string;
-};
-
 export async function fetchPaymentSettings(): Promise<PaymentSettings> {
   try {
-    const collection = await getSettingsCollection();
-    const doc = await collection.findOne({ _id: PAYMENT_SETTINGS_DOC_ID });
-    const parsedIbans = normalizePaymentIbans(doc?.ibans);
-    const normalizedWhatsappNumber = normalizeWhatsappNumber(doc?.whatsappNumber);
+    const raw = await readSetting<PaymentSettings | null>(PAYMENT_SETTINGS_DOC_ID, null);
+    const parsedIbans = normalizePaymentIbans(raw?.ibans);
+    const normalizedWhatsappNumber = normalizeWhatsappNumber(raw?.whatsappNumber);
     return {
       ibans: parsedIbans.length > 0 ? parsedIbans : fallbackPaymentIbans(),
       whatsappNumber: normalizedWhatsappNumber || fallbackWhatsappNumber(),
@@ -209,19 +196,7 @@ export async function savePaymentSettings(input: {
   }
   validateWhatsappNumber(whatsappNumber);
 
-  const collection = await getSettingsCollection();
-  await collection.updateOne(
-    { _id: PAYMENT_SETTINGS_DOC_ID },
-    {
-      $set: {
-        ibans,
-        whatsappNumber,
-        updatedAt: new Date().toISOString(),
-      },
-    },
-    { upsert: true },
-  );
-
+  await writeSetting(PAYMENT_SETTINGS_DOC_ID, { ibans, whatsappNumber });
   return { ibans, whatsappNumber };
 }
 
@@ -229,7 +204,6 @@ function selectIbanByUsagePriority(activeIbans: PaymentIbanEntry[]) {
   const maxUsage = Math.max(...activeIbans.map((entry) => clampUsageCount(entry.usageCount)));
   const weighted = activeIbans.map((entry) => ({
     entry,
-    // Az kullanılanı öne çıkaran ağırlık
     weight: maxUsage - clampUsageCount(entry.usageCount) + 1,
   }));
 

@@ -1,13 +1,7 @@
-import { getMongoClient } from "@/lib/mongodb";
+import { readSetting, writeSetting } from "@/lib/db-settings";
 
 const LOOKBOOK_DOC_ID = "homepage-lookbook";
 const LOOKBOOK_LIMIT = 8;
-
-type LookbookDoc = {
-  _id: string;
-  slugs: string[];
-  updatedAt?: string;
-};
 
 function normalizeSlugs(input: unknown) {
   if (!Array.isArray(input)) return [];
@@ -20,17 +14,10 @@ function normalizeSlugs(input: unknown) {
   ).slice(0, LOOKBOOK_LIMIT);
 }
 
-async function safeGetSettingsCollection() {
-  const client = await getMongoClient();
-  return client.db(process.env.MONGODB_DB ?? "oar-ore").collection<LookbookDoc>("settings");
-}
-
 export async function fetchLookbookSlugs(): Promise<string[]> {
   try {
-    const collection = await safeGetSettingsCollection();
-    const doc = await collection.findOne({ _id: LOOKBOOK_DOC_ID });
-    if (!doc) return [];
-    return normalizeSlugs(doc.slugs);
+    const value = await readSetting<string[]>(LOOKBOOK_DOC_ID, []);
+    return normalizeSlugs(value);
   } catch {
     return [];
   }
@@ -38,17 +25,6 @@ export async function fetchLookbookSlugs(): Promise<string[]> {
 
 export async function saveLookbookSlugs(input: unknown): Promise<string[]> {
   const slugs = normalizeSlugs(input);
-  const collection = await safeGetSettingsCollection();
-  await collection.updateOne(
-    { _id: LOOKBOOK_DOC_ID },
-    {
-      $set: {
-        slugs,
-        updatedAt: new Date().toISOString(),
-      },
-    },
-    { upsert: true },
-  );
+  await writeSetting(LOOKBOOK_DOC_ID, slugs);
   return slugs;
 }
-

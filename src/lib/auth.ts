@@ -1,10 +1,9 @@
 import { createHmac, randomBytes, scryptSync, timingSafeEqual } from "crypto";
-import { ObjectId } from "mongodb";
-import { getMongoClient } from "@/lib/mongodb";
+import { prisma } from "@/lib/prisma";
 import { AuthUser } from "@/lib/types";
 
 type UserDoc = {
-  _id?: ObjectId;
+  id: string;
   name: string;
   email: string;
   passwordHash: string;
@@ -23,8 +22,6 @@ const SESSION_MAX_AGE_SECONDS = 60 * 60 * 24 * 7;
 const DEV_AUTH_SECRET = "oar-ore-dev-auth-secret";
 let authSecretWarningShown = false;
 
-let usersIndexReady = false;
-
 function getAuthSecret() {
   const envSecret = process.env.AUTH_SECRET?.trim();
   if (envSecret) return envSecret;
@@ -34,7 +31,7 @@ function getAuthSecret() {
     if (fallbackSecret && fallbackSecret.length >= 8) {
       if (!authSecretWarningShown) {
         console.warn(
-          "[auth] AUTH_SECRET missing in production. Using temporary ADMIN_PASSWORD fallback. Please set AUTH_SECRET."
+          "[auth] AUTH_SECRET missing in production. Using temporary ADMIN_PASSWORD fallback. Please set AUTH_SECRET.",
         );
         authSecretWarningShown = true;
       }
@@ -133,39 +130,39 @@ export function getSessionCookieOptions() {
   };
 }
 
-async function usersCollection() {
-  const client = await getMongoClient();
-  const collection = client.db(process.env.MONGODB_DB ?? "oar-ore").collection<UserDoc>("users");
-
-  if (!usersIndexReady) {
-    await collection.createIndex({ email: 1 }, { unique: true });
-    usersIndexReady = true;
-  }
-
-  return collection;
+function normalizeUserDoc(doc: {
+  id: string;
+  name: string;
+  email: string;
+  passwordHash: string;
+  createdAt: Date;
+}): UserDoc {
+  return {
+    id: doc.id,
+    name: doc.name,
+    email: doc.email,
+    passwordHash: doc.passwordHash,
+    createdAt: doc.createdAt.toISOString(),
+  };
 }
 
-export async function findUserByEmail(email: string) {
-  const collection = await usersCollection();
-  return collection.findOne({ email: normalizeEmail(email) });
+export async function findUserByEmail(email: string): Promise<UserDoc | null> {
+  const doc = await prisma.user.findUnique({ where: { email: normalizeEmail(email) } });
+  return doc ? normalizeUserDoc(doc) : null;
 }
 
 export async function createUser(input: { name: string; email: string; passwordHash: string }) {
-  const collection = await usersCollection();
-  const now = new Date().toISOString();
+  const doc = await prisma.user.create({
+    data: {
+      name: input.name.trim(),
+      email: normalizeEmail(input.email),
+      passwordHash: input.passwordHash,
+    },
+  });
 
-  const doc: UserDoc = {
-    name: input.name.trim(),
-    email: normalizeEmail(input.email),
-    passwordHash: input.passwordHash,
-    createdAt: now,
-  };
-
-  const result = await collection.insertOne(doc);
   return {
-    id: result.insertedId.toString(),
+    id: doc.id,
     name: doc.name,
     email: doc.email,
   } satisfies AuthUser;
 }
-

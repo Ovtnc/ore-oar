@@ -1,10 +1,9 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
-import { ObjectId } from "mongodb";
 import { normalizeEmail, readSessionToken, SESSION_COOKIE_NAME } from "@/lib/auth";
+import { createSupportRequest } from "@/lib/db-support-requests";
 import { sendSupportRequestNotification } from "@/lib/email";
-import { getMongoClient } from "@/lib/mongodb";
-import { Order, SupportRequest } from "@/lib/types";
+import { getOrderById } from "@/lib/db-orders";
 
 type CreateSupportRequestPayload = {
   orderId?: string;
@@ -14,10 +13,6 @@ type CreateSupportRequestPayload = {
   subject?: string;
   message?: string;
 };
-
-type DbOrder = Omit<Order, "_id"> & { _id: ObjectId };
-
-type DbSupportRequest = Omit<SupportRequest, "_id"> & { _id?: ObjectId };
 
 function normalizeText(value: unknown, max = 300) {
   return String(value ?? "").trim().slice(0, max);
@@ -38,7 +33,7 @@ export async function POST(request: Request) {
   const subject = normalizeText(body?.subject, 160);
   const message = normalizeText(body?.message, 2500);
 
-  if (!orderId || !ObjectId.isValid(orderId)) {
+  if (!orderId) {
     return NextResponse.json({ error: "Geçerli bir sipariş seçin." }, { status: 400 });
   }
   if (!productId || !productName) {
@@ -51,11 +46,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Mesaj en az 10 karakter olmalı." }, { status: 400 });
   }
 
-  const client = await getMongoClient();
-  const db = client.db(process.env.MONGODB_DB ?? "oar-ore");
-  const orderObjectId = new ObjectId(orderId);
-  const order = await db.collection<DbOrder>("orders").findOne({ _id: orderObjectId });
-
+  const order = await getOrderById(orderId);
   if (!order) {
     return NextResponse.json({ error: "Sipariş bulunamadı." }, { status: 404 });
   }
@@ -72,7 +63,7 @@ export async function POST(request: Request) {
   }
 
   const now = new Date().toISOString();
-  const supportRequest: DbSupportRequest = {
+  const supportRequest = await createSupportRequest({
     orderId,
     userId: sessionUser.id,
     userEmail: sessionUser.email,
@@ -87,22 +78,13 @@ export async function POST(request: Request) {
     status: "Yeni",
     createdAt: now,
     updatedAt: now,
-  };
-
-  const insertResult = await db.collection<DbSupportRequest>("support_requests").insertOne(supportRequest);
-  const requestId = insertResult.insertedId.toString();
+  });
 
   try {
-    await sendSupportRequestNotification(
-      {
-        ...supportRequest,
-        _id: requestId,
-      },
-      requestId,
-    );
+    await sendSupportRequestNotification({ ...supportRequest, _id: undefined }, supportRequest._id ?? "");
   } catch {
     // Mail hatası talep açılmasını bozmasın.
   }
 
-  return NextResponse.json({ ok: true, requestId });
+  return NextResponse.json({ ok: true, requestId: supportRequest._id });
 }

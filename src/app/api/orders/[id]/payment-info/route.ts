@@ -1,13 +1,8 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
-import { ObjectId } from "mongodb";
 import { normalizeEmail, readSessionToken, SESSION_COOKIE_NAME } from "@/lib/auth";
-import {
-  assignLeastUsedPriorityRandomIban,
-  fallbackPaymentIbanValue,
-  fetchOrderWhatsappNumber,
-} from "@/lib/db-payment-settings";
-import { getMongoClient } from "@/lib/mongodb";
+import { assignLeastUsedPriorityRandomIban, fallbackPaymentIbanValue, fetchOrderWhatsappNumber } from "@/lib/db-payment-settings";
+import { getOrderById, updateOrderFields } from "@/lib/db-orders";
 import { Order } from "@/lib/types";
 
 function formatCurrency(value: unknown) {
@@ -37,10 +32,7 @@ function buildWhatsappMessage(order: Order, orderId: string) {
   ].join("\n");
 }
 
-export async function GET(
-  _request: Request,
-  { params }: { params: Promise<{ id: string }> },
-) {
+export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   const token = (await cookies()).get(SESSION_COOKIE_NAME)?.value;
   const sessionUser = readSessionToken(token);
   if (!sessionUser) {
@@ -48,22 +40,12 @@ export async function GET(
   }
 
   const { id } = await params;
-  if (!ObjectId.isValid(id)) {
-    return NextResponse.json({ error: "Geçersiz sipariş." }, { status: 400 });
-  }
-
-  const client = await getMongoClient();
-  const db = client.db(process.env.MONGODB_DB ?? "oar-ore");
-  const ordersCollection = db.collection("orders");
-  const objectId = new ObjectId(id);
-
-  const order = await ordersCollection.findOne({ _id: objectId });
+  const order = await getOrderById(id);
   if (!order) {
     return NextResponse.json({ error: "Order not found" }, { status: 404 });
   }
 
-  const emailMatches =
-    normalizeEmail(String(order.shipping?.email ?? "")) === normalizeEmail(sessionUser.email);
+  const emailMatches = normalizeEmail(String(order.shipping?.email ?? "")) === normalizeEmail(sessionUser.email);
   const userMatches = order.userId ? order.userId === sessionUser.id : emailMatches;
   if (!userMatches) {
     return NextResponse.json({ error: "Bu sipariş için yetkiniz yok." }, { status: 403 });
@@ -76,41 +58,28 @@ export async function GET(
   let usedFallback = false;
 
   if (!resolvedIban) {
-    // Eski siparişler için atanmamışsa burada bir kez atanır.
     const selected = await assignLeastUsedPriorityRandomIban();
     resolvedIban = selected.iban;
     resolvedIbanId = selected.id;
     resolvedIbanLabel = selected.label;
     resolvedAccountHolder = selected.accountHolderName;
     usedFallback = fallbackPaymentIbanValue() === selected.iban;
-    await ordersCollection.updateOne(
-      { _id: objectId },
-      {
-        $set: {
-          paymentIban: selected.iban,
-          paymentIbanId: selected.id,
-          paymentIbanLabel: selected.label,
-          paymentIbanAccountHolder: selected.accountHolderName,
-        },
-      },
-    );
+    await updateOrderFields(id, {
+      paymentIban: selected.iban,
+      paymentIbanId: selected.id,
+      paymentIbanLabel: selected.label,
+      paymentIbanAccountHolder: selected.accountHolderName,
+    });
   }
 
   const whatsappNumber = await fetchOrderWhatsappNumber();
-  const whatsappMessage = buildWhatsappMessage(
-    {
-      ...(order as unknown as Order),
-      _id: undefined,
-    },
-    id,
-  );
+  const whatsappMessage = buildWhatsappMessage(order, id);
   const whatsappUrl = `https://wa.me/${whatsappNumber}?text=${encodeURIComponent(whatsappMessage)}`;
 
   return NextResponse.json({
     whatsappNumber,
     whatsappMessage,
     whatsappUrl,
-    // Backward-compatible internal fields (UI bunları artık göstermiyor).
     iban: resolvedIban,
     ibanLabel: resolvedIbanLabel,
     accountHolderName: resolvedAccountHolder,

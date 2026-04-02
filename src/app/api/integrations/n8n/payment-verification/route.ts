@@ -1,9 +1,7 @@
-import { ObjectId } from "mongodb";
 import { NextResponse } from "next/server";
+import { getOrderById, updateOrderFields, verifyPayment } from "@/lib/db-orders";
 import { sendOrderStatusUpdateToCustomer } from "@/lib/email";
-import { getMongoClient } from "@/lib/mongodb";
 import { isValidN8nVerificationSecret } from "@/lib/payment-automation";
-import { Order } from "@/lib/types";
 
 type VerifyPaymentPayload = {
   orderId?: string;
@@ -14,8 +12,6 @@ type VerifyPaymentPayload = {
   paidAmount?: number;
   verifiedAt?: string;
 };
-
-type DbOrder = Omit<Order, "_id"> & { _id: ObjectId };
 
 function normalizeShortText(value: unknown, maxLen: number) {
   const text = String(value ?? "").trim();
@@ -44,7 +40,7 @@ export async function POST(request: Request) {
 
   const body = (await request.json().catch(() => null)) as VerifyPaymentPayload | null;
   const orderId = String(body?.orderId ?? "").trim();
-  if (!ObjectId.isValid(orderId)) {
+  if (!orderId) {
     return NextResponse.json({ error: "Geçersiz orderId." }, { status: 400 });
   }
 
@@ -55,57 +51,51 @@ export async function POST(request: Request) {
   const paidAmount = normalizePaidAmount(body?.paidAmount);
   const verifiedAt = parseVerifiedAt(body?.verifiedAt);
 
-  const client = await getMongoClient();
-  const db = client.db(process.env.MONGODB_DB ?? "oar-ore");
-  const ordersCollection = db.collection<DbOrder>("orders");
-
-  const objectId = new ObjectId(orderId);
-  const order = await ordersCollection.findOne({ _id: objectId });
+  const order = await getOrderById(orderId);
   if (!order) {
     return NextResponse.json({ error: "Sipariş bulunamadı." }, { status: 404 });
   }
 
-  const now = new Date().toISOString();
-  const updatePayload: Record<string, unknown> = {
-    updatedAt: now,
-    paymentVerificationSource: "n8n",
-    ...(note ? { paymentVerificationNote: note } : {}),
-    ...(receiptUrl ? { paymentReceiptUrl: receiptUrl } : {}),
-    ...(transactionRef ? { paymentTransactionRef: transactionRef } : {}),
-    ...(paidAmount !== null ? { paymentPaidAmount: paidAmount } : {}),
-  };
-
   if (verified) {
-    updatePayload.status = "Ödeme Alındı";
-    updatePayload.paymentVerifiedAt = verifiedAt;
-    if (!order.paymentNotifiedAt) {
-      updatePayload.paymentNotifiedAt = now;
+    const updated = await verifyPayment(orderId, "n8n", {
+      receiptUrl,
+      transactionRef,
+      note,
+      paidAmount,
+      verifiedAt,
+    });
+
+    if (order.status !== "Ödeme Alındı") {
+      try {
+        await sendOrderStatusUpdateToCustomer({ ...updated, _id: undefined }, orderId, "Ödeme Alındı");
+      } catch {
+        // Müşteri bildirim maili başarısız olsa da webhook başarılı kabul edilir.
+      }
     }
-  } else {
-    updatePayload.paymentVerificationFailedAt = now;
+
+    return NextResponse.json({
+      ok: true,
+      orderId,
+      verified: true,
+      status: "Ödeme Alındı",
+      paymentVerifiedAt: updated.paymentVerifiedAt,
+    });
   }
 
-  await ordersCollection.updateOne({ _id: objectId }, { $set: updatePayload });
-
-  if (verified && order.status !== "Ödeme Alındı") {
-    try {
-      const nextOrder: Order = {
-        ...(order as unknown as Order),
-        _id: undefined,
-        status: "Ödeme Alındı",
-        paymentVerifiedAt: verifiedAt,
-      };
-      await sendOrderStatusUpdateToCustomer(nextOrder, orderId, "Ödeme Alındı");
-    } catch {
-      // Müşteri bildirim maili başarısız olsa da webhook başarılı kabul edilir.
-    }
-  }
+  await updateOrderFields(orderId, {
+    paymentVerificationSource: "n8n",
+    paymentVerificationNote: note || undefined,
+    paymentReceiptUrl: receiptUrl || undefined,
+    paymentTransactionRef: transactionRef || undefined,
+    paymentPaidAmount: paidAmount ?? undefined,
+    paymentVerificationFailedAt: new Date(),
+  });
 
   return NextResponse.json({
     ok: true,
     orderId,
-    verified,
-    status: verified ? "Ödeme Alındı" : order.status,
-    paymentVerifiedAt: verified ? verifiedAt : null,
+    verified: false,
+    status: order.status,
+    paymentVerifiedAt: null,
   });
 }

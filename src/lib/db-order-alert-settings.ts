@@ -1,15 +1,9 @@
 import { normalizeEmail } from "@/lib/auth";
-import { getMongoClient } from "@/lib/mongodb";
+import { readSetting, writeSetting } from "@/lib/db-settings";
 
 const ORDER_ALERT_SETTINGS_DOC_ID = "order-alert-settings";
 const ORDER_ALERT_DEFAULT_EMAIL = "okanvatanci@gmail.com";
 const MAX_RECIPIENTS = 20;
-
-type OrderAlertSettingsDoc = {
-  _id: string;
-  recipients?: string[];
-  updatedAt?: string;
-};
 
 function fallbackRecipients() {
   return Array.from(
@@ -49,16 +43,9 @@ function validateRecipients(emails: string[]) {
   }
 }
 
-async function settingsCollection() {
-  const client = await getMongoClient();
-  return client.db(process.env.MONGODB_DB ?? "oar-ore").collection<OrderAlertSettingsDoc>("settings");
-}
-
 export async function fetchOrderAlertRecipients() {
   try {
-    const collection = await settingsCollection();
-    const doc = await collection.findOne({ _id: ORDER_ALERT_SETTINGS_DOC_ID });
-    const parsed = parseRecipients(doc?.recipients ?? []);
+    const parsed = parseRecipients(await readSetting<string[]>(ORDER_ALERT_SETTINGS_DOC_ID, []));
     if (parsed.length > 0) return parsed;
     return fallbackRecipients();
   } catch {
@@ -69,18 +56,6 @@ export async function fetchOrderAlertRecipients() {
 export async function saveOrderAlertRecipients(input: unknown) {
   const recipients = parseRecipients(input);
   validateRecipients(recipients);
-
-  const collection = await settingsCollection();
-  await collection.updateOne(
-    { _id: ORDER_ALERT_SETTINGS_DOC_ID },
-    {
-      $set: {
-        recipients,
-        updatedAt: new Date().toISOString(),
-      },
-    },
-    { upsert: true },
-  );
-
+  await writeSetting(ORDER_ALERT_SETTINGS_DOC_ID, recipients);
   return recipients;
 }

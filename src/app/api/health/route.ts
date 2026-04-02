@@ -1,10 +1,9 @@
 import { NextResponse } from "next/server";
-import { getMongoClient } from "@/lib/mongodb";
+import { prisma } from "@/lib/prisma";
 
 export async function GET() {
   try {
-    const client = await getMongoClient();
-    await client.db(process.env.MONGODB_DB ?? "oar-ore").command({ ping: 1 });
+    await prisma.$queryRaw`SELECT 1`;
 
     return NextResponse.json({
       ok: true,

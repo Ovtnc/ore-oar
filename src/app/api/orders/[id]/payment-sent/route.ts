@@ -1,16 +1,11 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
-import { ObjectId } from "mongodb";
 import { normalizeEmail, readSessionToken, SESSION_COOKIE_NAME } from "@/lib/auth";
-import { getMongoClient } from "@/lib/mongodb";
+import { getOrderById, markPaymentNotified } from "@/lib/db-orders";
 import { sendPaymentNotificationToAdmin } from "@/lib/email";
 import { emitPaymentNotifiedToN8n } from "@/lib/payment-automation";
-import { Order } from "@/lib/types";
 
-export async function POST(
-  _request: Request,
-  { params }: { params: Promise<{ id: string }> },
-) {
+export async function POST(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   const token = (await cookies()).get(SESSION_COOKIE_NAME)?.value;
   const sessionUser = readSessionToken(token);
   if (!sessionUser) {
@@ -18,62 +13,35 @@ export async function POST(
   }
 
   const { id } = await params;
-  if (!ObjectId.isValid(id)) {
-    return NextResponse.json({ error: "Geçersiz sipariş." }, { status: 400 });
-  }
-
-  const client = await getMongoClient();
-  const db = client.db(process.env.MONGODB_DB ?? "oar-ore");
-  const ordersCollection = db.collection("orders");
-
-  const objectId = new ObjectId(id);
-  const order = await ordersCollection.findOne({ _id: objectId });
+  const order = await getOrderById(id);
 
   if (!order) {
     return NextResponse.json({ error: "Order not found" }, { status: 404 });
   }
 
-  const emailMatches =
-    normalizeEmail(String(order.shipping?.email ?? "")) === normalizeEmail(sessionUser.email);
+  const emailMatches = normalizeEmail(String(order.shipping?.email ?? "")) === normalizeEmail(sessionUser.email);
   const userMatches = order.userId ? order.userId === sessionUser.id : emailMatches;
   if (!userMatches) {
     return NextResponse.json({ error: "Bu sipariş için yetkiniz yok." }, { status: 403 });
   }
 
-  if (order.paymentNotifiedAt) {
+  const result = await markPaymentNotified(id);
+  if (!result) {
+    return NextResponse.json({ error: "Order not found" }, { status: 404 });
+  }
+
+  if (result.alreadyNotified) {
     return NextResponse.json({ ok: true, alreadyNotified: true });
   }
 
-  const notifiedAt = new Date().toISOString();
-  await ordersCollection.updateOne(
-    { _id: objectId },
-    {
-      $set: {
-        paymentNotifiedAt: notifiedAt,
-      },
-    },
-  );
-
   try {
-    await emitPaymentNotifiedToN8n({
-      orderId: id,
-      order: {
-        ...(order as unknown as Order),
-        paymentNotifiedAt: notifiedAt,
-      },
-    });
+    await emitPaymentNotifiedToN8n({ orderId: id, order: { ...result.order, _id: undefined } });
   } catch {
     // n8n entegrasyon hatası müşteri akışını bozmasın.
   }
 
   try {
-    await sendPaymentNotificationToAdmin(
-      {
-        ...(order as unknown as Order),
-        paymentNotifiedAt: notifiedAt,
-      },
-      id,
-    );
+    await sendPaymentNotificationToAdmin({ ...result.order, _id: undefined }, id);
   } catch {
     // Admin'e bildirim maili atılamasa bile müşteri akışı devam etsin.
   }

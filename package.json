@@ -10,13 +10,20 @@
     "lint": "eslint",
     "typecheck": "pnpm exec tsc --noEmit",
     "check": "npm run lint && npm run build",
-    "mongo:dns-check": "node scripts/mongo-dns-check.cjs"
+    "prisma:generate": "prisma generate",
+    "prisma:migrate:dev": "prisma migrate dev",
+    "prisma:migrate:deploy": "prisma migrate deploy",
+    "migrate:mongo-to-postgres": "node scripts/mongo-to-postgres.mjs",
+    "admin:setup": "node --env-file=.env scripts/setup-admin.mjs",
+    "test:api:smoke": "node --env-file=.env scripts/smoke-api-postgres.mjs",
+    "postinstall": "prisma generate"
   },
   "dependencies": {
+    "@prisma/client": "^6.19.3",
     "@react-three/drei": "^10.7.7",
     "@react-three/fiber": "^9.5.0",
     "framer-motion": "^12.38.0",
-    "mongodb": "^7.1.0",
+    "mongodb": "^7.0.0",
     "next": "16.2.0",
     "nodemailer": "^8.0.3",
     "react": "19.2.4",
@@ -33,6 +40,7 @@
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.2.0",
+    "prisma": "^6.19.3",
     "tailwindcss": "^4",
     "typescript": "^5"
   }

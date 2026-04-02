@@ -24,7 +24,7 @@ Atölye üretim takı e-ticaret uygulaması.
 - Next.js 16 (App Router)
 - React 19
 - Tailwind CSS
-- MongoDB
+- PostgreSQL + Prisma
 - Resend veya SMTP (Nodemailer) ile mail
 
 ## Kurulum
@@ -41,7 +41,7 @@ npm install
 cp .env.example .env
 ```
 
-3. Gerekli env değerlerini doldurun (`MONGODB_URI`, `AUTH_SECRET`, `ADMIN_EMAIL`, mail ayarları).
+3. Gerekli env değerlerini doldurun (`DATABASE_URL`, `AUTH_SECRET`, `ADMIN_EMAIL`, mail ayarları).
 
 4. Geliştirme sunucusunu başlatın:
 
@@ -58,6 +58,11 @@ npm run dev
 - `npm run typecheck`: TypeScript kontrolü
 - `npm run build`: production build
 - `npm run check`: lint + build
+- `npm run prisma:migrate:dev`: local migration oluştur + uygula
+- `npm run prisma:migrate:deploy`: production migration uygula
+- `npm run migrate:mongo-to-postgres`: Mongo verisini PostgreSQL'e aktar
+- `npm run admin:setup`: `.env` içindeki admin kullanıcıyı oluştur/güncelle
+- `npm run test:api:smoke`: PostgreSQL üzerinde uçtan uca temel API smoke testi
 
 ## Admin Erişimi
 
@@ -101,17 +106,46 @@ Amaç: Müşteri ödeme yaptıktan sonra dekont akışını otomatikleştirmek.
 
 `verified=true` ise sipariş otomatik `Ödeme Alındı` olur ve kullanıcı durumu güncellenir.
 
+## Mongo -> PostgreSQL Veri Taşıma
+
+Bu proje PostgreSQL + Prisma yapısına geçirildi. Eski Mongo verisini taşımak için:
+
+1. Önce PostgreSQL migration'ı uygula:
+
+```bash
+npm run prisma:migrate:deploy
+```
+
+2. Sonra taşıma scriptini çalıştır:
+
+```bash
+MIGRATION_MONGODB_URI='mongodb+srv://...' \
+MIGRATION_MONGODB_DB='oar-ore' \
+npm run migrate:mongo-to-postgres
+```
+
+Opsiyonlar:
+- `MIGRATION_TRUNCATE=1`: önce PostgreSQL tablolarını temizler.
+- `MIGRATION_ONLY=users,products,orders,support_requests,settings`: sadece seçilen koleksiyonları taşır.
+
+Script şu koleksiyonları taşır:
+- `users`
+- `products`
+- `orders`
+- `support_requests`
+- `settings` -> `app_settings`
+
 ## Health Check
 
 - Uygulama sağlık endpointi:
   - `GET /api/health`
-- MongoDB `ping` başarılıysa `200 { ok: true }`, değilse `503` döner.
+- PostgreSQL sorgusu (`SELECT 1`) başarılıysa `200 { ok: true }`, değilse `503` döner.
 
 ## Canlıya Alma Checklist
 
 1. `npm run check` komutunun lokal/CI’da geçtiğini doğrulayın.
 2. Production env’leri tanımlayın:
-   - `MONGODB_URI`, `MONGODB_DB`
+   - `DATABASE_URL`
    - `AUTH_SECRET`
    - `ADMIN_ALLOWED_EMAIL` veya `ADMIN_EMAIL`
    - `MAIL_FROM` + (`RESEND_API_KEY` veya `SMTP_*`)
@@ -120,7 +154,8 @@ Amaç: Müşteri ödeme yaptıktan sonra dekont akışını otomatikleştirmek.
      - `N8N_PAYMENT_EVENT_WEBHOOK`
      - `N8N_PAYMENT_EVENT_TOKEN` (opsiyonel)
      - `N8N_PAYMENT_VERIFY_SECRET`
-3. MongoDB kullanıcısında write izinlerini doğrulayın (`orders`, `products`, `settings`, `support_requests`, `users`).
+3. Migration'ları canlıda uygulayın:
+   - `npm run prisma:migrate:deploy`
 4. Deploy sonrası kontrol edin:
    - `/api/health`
    - giriş/çıkış

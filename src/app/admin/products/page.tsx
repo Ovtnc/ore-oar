@@ -5,7 +5,7 @@ import Link from "next/link";
 import { toSafePrice } from "@/lib/price";
 import { Product, ProductCategory, ProductCoatingOption } from "@/lib/types";
 
-const categories: ProductCategory[] = ["Kolye", "Bileklik", "Pin", "Küpe", "Anahtarlık"];
+const categories: ProductCategory[] = ["Kolye", "Bileklik", "Pin", "Küpe", "Anahtarlık", "Aksesuar"];
 
 type ProductFormState = {
   slug: string;

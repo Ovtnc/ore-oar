@@ -21,6 +21,7 @@ type ProductRow = {
   stock: number;
   leadTimeDays: number;
   tags: string[];
+  seoKeywords: string[];
   coatingOptions: unknown;
   isNew: boolean;
   isLimited: boolean;
@@ -160,6 +161,37 @@ function parseCoatingOptions(input: unknown): ProductCoatingOption[] {
     .filter((item): item is ProductCoatingOption => item !== null);
 }
 
+function parseKeywordList(input: unknown, fallback?: unknown): string[] {
+  const values: string[] = [];
+
+  const collect = (value: unknown) => {
+    if (Array.isArray(value)) {
+      value.forEach((item) => collect(item));
+      return;
+    }
+
+    if (typeof value === "string") {
+      value
+        .split(/[\n,]/)
+        .map((item) => item.trim())
+        .filter(Boolean)
+        .forEach((item) => values.push(item));
+      return;
+    }
+
+    if (value && typeof value === "object") {
+      Object.values(value as Record<string, unknown>).forEach((item) => collect(item));
+    }
+  };
+
+  collect(input);
+  if (values.length === 0) {
+    collect(fallback);
+  }
+
+  return Array.from(new Set(values));
+}
+
 function normalizeSlug(input: string) {
   return input
     .trim()
@@ -211,6 +243,7 @@ function normalizeProduct(doc: Partial<ProductRow>): Product {
     stock: parseStock(doc.stock ?? 12),
     leadTimeDays: Number(doc.leadTimeDays ?? 3),
     tags: Array.isArray(doc.tags) ? doc.tags : [],
+    seoKeywords: parseKeywordList(doc.seoKeywords, doc.tags),
     coatingOptions: parseCoatingOptions(doc.coatingOptions),
     isNew: Boolean(doc.isNew),
     isLimited: Boolean(doc.isLimited),
@@ -235,6 +268,7 @@ function toProductPayload(body: unknown): Omit<Product, "id"> & { id?: string } 
   const isLimited = b?.isLimited === true || b?.isLimited === "true";
   const images = parseImageList(b?.images, b?.image);
   const primaryImage = images[0] ?? "/products/aether.jpg";
+  const seoKeywords = parseKeywordList(b?.seoKeywords, b?.tags);
 
   return {
     id: typeof b?.id === "string" && b.id.trim() ? b.id.trim() : undefined,
@@ -251,6 +285,7 @@ function toProductPayload(body: unknown): Omit<Product, "id"> & { id?: string } 
     stock: parseStock(b?.stock),
     leadTimeDays: Number(b?.leadTimeDays ?? 3),
     tags,
+    seoKeywords,
     coatingOptions: parseCoatingOptions(b?.coatingOptions),
     isNew,
     isLimited,
@@ -304,6 +339,7 @@ export async function createProduct(body: unknown): Promise<Product> {
       stock: payload.stock,
       leadTimeDays: payload.leadTimeDays,
       tags: payload.tags,
+      seoKeywords: payload.seoKeywords,
       coatingOptions: toInputJson(payload.coatingOptions ?? []),
       isNew: payload.isNew ?? false,
       isLimited: payload.isLimited ?? false,
@@ -323,6 +359,7 @@ export async function createProduct(body: unknown): Promise<Product> {
       stock: payload.stock,
       leadTimeDays: payload.leadTimeDays,
       tags: payload.tags,
+      seoKeywords: payload.seoKeywords,
       coatingOptions: toInputJson(payload.coatingOptions ?? []),
       isNew: payload.isNew ?? false,
       isLimited: payload.isLimited ?? false,

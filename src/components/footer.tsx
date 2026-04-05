@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { NewsletterForm } from "@/components/newsletter-form";
 
 const footerLinks = [
   { href: "/products", label: "Koleksiyon" },
@@ -22,6 +23,16 @@ export function Footer() {
             Her parça atölyede siparişe özel hazırlanır. Işığı farklı açılarda yansıtan yüzey dili ile
             modern ve uzun ömürlü bir kullanım hedeflenir.
           </p>
+
+          <div className="mt-6 max-w-xl rounded-2xl border border-[#D4AF37]/20 bg-black/20 p-4">
+            <p className="text-xs tracking-[0.22em] text-[#D4AF37]">BÜLTEN</p>
+            <p className="mt-2 text-sm text-zinc-300">
+              Yeni koleksiyonlar, özel üretim duyuruları ve sınırlı parçalar için e-bültene katıl.
+            </p>
+            <div className="mt-4">
+              <NewsletterForm />
+            </div>
+          </div>
         </div>
 
         <div className="grid gap-3 self-end text-sm">

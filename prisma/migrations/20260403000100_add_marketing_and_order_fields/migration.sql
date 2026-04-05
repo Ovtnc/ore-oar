@@ -1,0 +1,8 @@
+ALTER TABLE "products"
+  ADD COLUMN IF NOT EXISTS "seoKeywords" TEXT[] NOT NULL DEFAULT '{}';
+
+ALTER TABLE "orders"
+  ADD COLUMN IF NOT EXISTS "couponCode" TEXT,
+  ADD COLUMN IF NOT EXISTS "couponDiscountPercent" INTEGER,
+  ADD COLUMN IF NOT EXISTS "couponDiscountAmount" INTEGER,
+  ADD COLUMN IF NOT EXISTS "trackingNumber" TEXT;

@@ -15,6 +15,14 @@ const statusFlow: OrderStatus[] = [
   "Tamamlandı",
 ];
 
+const orderTimelineSteps = [
+  "Sipariş Verildi",
+  "Ödeme Bekleniyor",
+  "Ödeme Onaylandı",
+  "Atölyede Hazırlanıyor",
+  "Kargoya Verildi",
+];
+
 function statusMeta(status: OrderStatus) {
   if (status === "Beklemede") {
     return { className: "border-amber-400/45 bg-amber-500/10 text-amber-200" };
@@ -40,6 +48,53 @@ function toId(value: unknown, fallback: string) {
   return fallback;
 }
 
+function OrderTimeline({ status }: { status: OrderStatus }) {
+  const statusIndex = Math.max(statusFlow.indexOf(status), 0);
+  const timelineIndex = status === "Beklemede" ? 1 : Math.min(statusIndex + 1, orderTimelineSteps.length - 1);
+  const completedPercent = (timelineIndex / Math.max(orderTimelineSteps.length - 1, 1)) * 100;
+
+  return (
+    <div className="mt-4 rounded-xl border border-[#D4AF37]/18 bg-black/20 p-3">
+      <div className="mb-2 flex items-center justify-between text-xs text-zinc-400">
+        <span>Sipariş Takibi</span>
+        <span>
+          Adım {timelineIndex + 1} / {orderTimelineSteps.length}
+        </span>
+      </div>
+
+      <div className="relative mb-3 h-2 rounded-full bg-zinc-800">
+        <div
+          className="absolute inset-y-0 left-0 rounded-full bg-gradient-to-r from-[#D4AF37] to-[#F3D47B] transition-all duration-500"
+          style={{ width: `${completedPercent}%` }}
+        />
+      </div>
+
+      <ol className="grid grid-cols-5 gap-2">
+        {orderTimelineSteps.map((step, index) => {
+          const completed = index < timelineIndex;
+          const current = index === timelineIndex;
+          const stateClass = completed
+            ? "border-[#D4AF37]/70 bg-[#D4AF37]/20 text-[#F3D47B]"
+            : current
+              ? "border-[#D4AF37] bg-[#D4AF37]/22 text-[#F3D47B] shadow-[0_0_20px_rgba(212,175,55,0.55)] animate-pulse"
+              : "border-zinc-700 bg-zinc-900/65 text-zinc-500";
+
+          return (
+            <li key={step} className="text-center">
+              <span className={`mx-auto inline-flex h-7 w-7 items-center justify-center rounded-full border text-[11px] font-semibold ${stateClass}`}>
+                {index + 1}
+              </span>
+              <p className={`mt-1 text-[10px] leading-tight ${current ? "text-[#F3D47B]" : completed ? "text-zinc-300" : "text-zinc-500"}`}>
+                {step}
+              </p>
+            </li>
+          );
+        })}
+      </ol>
+    </div>
+  );
+}
+
 export default function OrdersPage() {
   const { isAuthenticated, loading: authLoading } = useAuth();
   const [orders, setOrders] = useState<UserOrder[]>([]);
@@ -50,14 +105,21 @@ export default function OrdersPage() {
     if (authLoading) return;
     if (!isAuthenticated) return;
 
-    const loadOrders = async () => {
-      setLoading(true);
-      setError(null);
+    let active = true;
+
+    const loadOrders = async (silent = false) => {
+      if (!silent) {
+        setLoading(true);
+      }
+      setError((prev) => (silent ? prev : null));
 
       try {
         const response = await fetch("/api/orders", { cache: "no-store" });
         if (response.status === 401) {
-          setError("Siparişlerini görebilmek için giriş yapman gerekiyor.");
+          if (!active) return;
+          if (!silent) {
+            setError("Siparişlerini görebilmek için giriş yapman gerekiyor.");
+          }
           setOrders([]);
           return;
         }
@@ -70,16 +132,39 @@ export default function OrdersPage() {
           ...order,
           _id: toId(order._id, `order-${index}`),
         }));
+        if (!active) return;
         setOrders(normalized);
       } catch {
-        setError("Siparişler yüklenemedi. Lütfen tekrar deneyin.");
-        setOrders([]);
+        if (!active) return;
+        if (!silent) {
+          setError("Siparişler yüklenemedi. Lütfen tekrar deneyin.");
+        }
       } finally {
-        setLoading(false);
+        if (!active) return;
+        if (!silent) {
+          setLoading(false);
+        }
       }
     };
 
     void loadOrders();
+
+    const interval = setInterval(() => {
+      void loadOrders(true);
+    }, 6000);
+
+    const onFocus = () => {
+      void loadOrders(true);
+    };
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onFocus);
+
+    return () => {
+      active = false;
+      clearInterval(interval);
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onFocus);
+    };
   }, [authLoading, isAuthenticated]);
 
   if (authLoading || loading) {
@@ -134,8 +219,6 @@ export default function OrdersPage() {
       ) : (
         <div className="mt-6 grid gap-4">
           {orders.map((order) => {
-            const step = Math.max(statusFlow.indexOf(order.status), 0) + 1;
-            const progress = (step / statusFlow.length) * 100;
             return (
               <article
                 key={order._id}
@@ -155,19 +238,7 @@ export default function OrdersPage() {
                     </p>
                   </div>
                 </div>
-
-                <div className="mt-4">
-                  <div className="mb-1 flex items-center justify-between text-xs text-zinc-400">
-                    <span>Hazırlık Durumu</span>
-                    <span>{step}/{statusFlow.length}</span>
-                  </div>
-                  <div className="h-2 overflow-hidden rounded-full bg-zinc-800">
-                    <div
-                      className="h-full rounded-full bg-gradient-to-r from-[#D4AF37] to-[#F3D47B]"
-                      style={{ width: `${progress}%` }}
-                    />
-                  </div>
-                </div>
+                <OrderTimeline status={order.status} />
 
                 <div className="mt-4 grid gap-3 rounded-xl border border-zinc-800/60 bg-black/25 p-3 md:grid-cols-[1fr_1fr]">
                   <div>
@@ -206,6 +277,18 @@ export default function OrdersPage() {
                     <p className="mt-2 whitespace-pre-wrap text-sm text-zinc-200">{order.customerNote}</p>
                   </div>
                 )}
+
+                <div className="mt-4 rounded-xl border border-[#D4AF37]/22 bg-black/25 p-3">
+                  <p className="text-sm text-zinc-200">Bu siparişle ilgili bir sorunuz mu var?</p>
+                  <Link
+                    href={`/contact?orderId=${encodeURIComponent(order._id)}${
+                      order.items[0]?.productId ? `&productId=${encodeURIComponent(order.items[0].productId)}` : ""
+                    }`}
+                    className="mt-2 inline-flex rounded-lg border border-[#D4AF37]/45 px-3 py-2 text-xs font-medium text-[#D4AF37] transition hover:bg-[#D4AF37]/10"
+                  >
+                    Destek Talebi Oluştur (#{order._id})
+                  </Link>
+                </div>
               </article>
             );
           })}

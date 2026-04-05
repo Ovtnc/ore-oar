@@ -18,6 +18,10 @@ export type AuthUser = {
   email: string;
 };
 
+export type CouponDiscountType = "percentage" | "fixed";
+
+export type ReviewStatus = "pending" | "approved" | "rejected";
+
 export type OrderStatus =
   | "Beklemede"
   | "Ödeme Alındı"
@@ -40,9 +44,54 @@ export type Product = {
   stock: number;
   leadTimeDays: number;
   tags: string[];
+  seoKeywords?: string[];
   coatingOptions?: ProductCoatingOption[];
   isNew?: boolean;
   isLimited?: boolean;
+};
+
+export type Coupon = {
+  id?: string;
+  code: string;
+  discountType: CouponDiscountType;
+  discountValue: number;
+  minOrderTotal: number;
+  usageLimit?: number | null;
+  usedCount: number;
+  validFrom: string;
+  validUntil: string;
+  collectionRestriction?: string | null;
+  isActive?: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+export type NewsletterSubscriber = {
+  email: string;
+  createdAt: string;
+};
+
+export type ProductReview = {
+  id: string;
+  userId: string;
+  userEmail: string;
+  userName: string;
+  productId: string;
+  productSlug?: string;
+  productName?: string;
+  orderId?: string;
+  rating: number;
+  comment: string;
+  images: string[];
+  status: ReviewStatus;
+  createdAt: string;
+  updatedAt?: string;
+  approvedAt?: string;
+  approvedBy?: string;
+  approved?: boolean;
+  title?: string;
+  message?: string;
+  imageUrl?: string;
 };
 
 export type CartItem = {
@@ -78,6 +127,10 @@ export type Order = {
   userEmail?: string;
   items: OrderItem[];
   customerNote?: string;
+  couponCode?: string;
+  couponDiscountPercent?: number;
+  couponDiscountAmount?: number;
+  trackingNumber?: string;
   shipping: ShippingInfo;
   status: OrderStatus;
   total: number;

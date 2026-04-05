@@ -4,16 +4,25 @@ import { Canvas, useFrame, useLoader } from "@react-three/fiber";
 import { ContactShadows, Environment, Sparkles } from "@react-three/drei";
 import { motion } from "framer-motion";
 import Link from "next/link";
+import Image from "next/image";
 import { useMemo, useRef } from "react";
 import * as THREE from "three";
 import { OBJLoader } from "three/examples/jsm/loaders/OBJLoader.js";
 
-const chips = ["Atölye Üretimi", "Mimari Silüet", "2-5 Gün Hazırlık"];
-const stats = [
-  { value: "+9", label: "Koleksiyon Parçası" },
-  { value: "%100", label: "Siparişe Özel Üretim" },
-  { value: "24h", label: "Üretim Planlama" },
+const trustItems = [
+  "El işçiliği kalite kontrol",
+  "Sipariş sonrası canlı durum takibi",
+  "Şeffaf kaplama fiyatlandırması",
 ];
+
+function ShieldIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden>
+      <path d="M12 3l7 3v6c0 5-3.2 8.6-7 10-3.8-1.4-7-5-7-10V6l7-3z" />
+      <path d="M9 12l2 2 4-4" />
+    </svg>
+  );
+}
 
 function LogoPendantMesh() {
   const groupRef = useRef<THREE.Group>(null);
@@ -128,24 +137,13 @@ export function HeroPendant() {
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_10%_12%,rgba(212,175,55,0.24),transparent_34%),radial-gradient(circle_at_90%_15%,rgba(212,175,55,0.16),transparent_30%),radial-gradient(circle_at_50%_95%,rgba(212,175,55,0.11),transparent_34%)]" />
       <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(120deg,rgba(10,10,10,0.64),rgba(10,10,10,0.26)_45%,rgba(10,10,10,0.62))]" />
 
-      <div className="mx-auto grid min-h-[92vh] w-full max-w-6xl gap-10 px-4 py-12 md:grid-cols-[1.05fr_0.95fr] md:items-stretch md:px-8 md:py-16">
+      <div className="mx-auto grid min-h-[84vh] w-full max-w-6xl gap-10 px-4 py-12 md:grid-cols-[1.05fr_0.95fr] md:items-stretch md:px-8 md:py-16">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.7 }}
           className="relative z-10 flex h-full flex-col justify-center rounded-3xl border border-[#D4AF37]/20 bg-[linear-gradient(145deg,rgba(34,34,34,0.55),rgba(12,12,12,0.35))] p-5 md:p-6"
         >
-          <div className="mb-5 flex flex-wrap gap-2">
-            {chips.map((chip) => (
-              <span
-                key={chip}
-                className="rounded-full border border-[#D4AF37]/35 bg-black/35 px-4 py-2 text-[11px] tracking-[0.2em] text-zinc-200"
-              >
-                {chip}
-              </span>
-            ))}
-          </div>
-
           <h1 className="max-w-2xl text-5xl leading-[0.88] text-zinc-100 md:text-7xl">
             Metalin yeni dili.
             <span className="mt-2 block bg-gradient-to-r from-[#d4af37] via-[#f3d47b] to-[#b88f21] bg-clip-text text-transparent">
@@ -166,20 +164,11 @@ export function HeroPendant() {
               Koleksiyonu Keşfet
             </Link>
             <Link
-              href="/cart"
+              href="/#nasil-calisiyoruz"
               className="inline-flex items-center justify-center rounded-lg border border-[#D4AF37]/40 bg-black/35 px-7 py-3 text-sm font-semibold tracking-wide text-[#f3d47b] transition hover:border-[#D4AF37] hover:bg-[#D4AF37]/10"
             >
-              Sepete Git
+              Nasıl Çalışıyoruz
             </Link>
-          </div>
-
-          <div className="mt-8 grid gap-3 rounded-2xl border border-[#D4AF37]/25 bg-black/15 p-4 sm:grid-cols-3">
-            {stats.map((item) => (
-              <div key={item.label} className="rounded-xl border border-[#D4AF37]/15 bg-black/25 p-3">
-                <p className="text-2xl font-semibold text-[#f3d47b]">{item.value}</p>
-                <p className="mt-1 text-xs tracking-[0.14em] text-zinc-400">{item.label}</p>
-              </div>
-            ))}
           </div>
         </motion.div>
 
@@ -189,12 +178,16 @@ export function HeroPendant() {
           transition={{ duration: 0.7, delay: 0.1 }}
           className="relative min-h-[440px] overflow-hidden rounded-3xl border border-[#D4AF37]/35 bg-black/22 shadow-[0_0_80px_rgba(212,175,55,0.2)] md:h-full"
         >
+          <Image
+            src="/logo.png"
+            alt="Oar & Ore hero görseli"
+            fill
+            sizes="(max-width: 768px) 100vw, 50vw"
+            className="object-cover opacity-[0.08]"
+            priority
+          />
           <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_25%_20%,rgba(212,175,55,0.24),transparent_45%)]" />
           <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(140deg,transparent_38%,rgba(212,175,55,0.2)_60%,transparent_82%)] opacity-60" />
-
-       
-
-          
 
           <Canvas camera={{ position: [0, 0.28, 3.1], fov: 36 }}>
             <ambientLight intensity={0.45} />
@@ -208,6 +201,22 @@ export function HeroPendant() {
             <Environment preset="city" />
           </Canvas>
         </motion.div>
+      </div>
+
+      <div className="relative z-10 mx-auto w-full max-w-6xl px-4 pb-8 md:px-8 md:pb-12">
+        <div className="flex gap-3 overflow-x-auto rounded-2xl border border-[#D4AF37]/28 bg-black/30 p-3 md:p-4">
+          {trustItems.map((item) => (
+            <div
+              key={item}
+              className="flex min-w-[240px] flex-1 items-center gap-2 rounded-xl border border-[#D4AF37]/20 bg-[linear-gradient(145deg,rgba(22,22,22,0.85),rgba(8,8,8,0.9))] px-3 py-2.5"
+            >
+              <span className="rounded-full border border-[#D4AF37]/45 bg-[#D4AF37]/12 p-1 text-[#F3D47B]">
+                <ShieldIcon />
+              </span>
+              <p className="text-xs tracking-[0.06em] text-zinc-200">{item}</p>
+            </div>
+          ))}
+        </div>
       </div>
     </section>
   );

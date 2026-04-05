@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { toSafePrice } from "@/lib/price";
@@ -21,6 +22,7 @@ type ProductFormState = {
   stock: string;
   leadTimeDays: string;
   tags: string;
+  seoKeywords: string;
   isNew: boolean;
   isLimited: boolean;
   hasCoating: boolean;
@@ -46,6 +48,7 @@ function emptyForm(): ProductFormState {
     stock: "0",
     leadTimeDays: "3",
     tags: "",
+    seoKeywords: "",
     isNew: false,
     isLimited: false,
     hasCoating: false,
@@ -132,6 +135,10 @@ export default function AdminProductsPage() {
   const [editingSlug, setEditingSlug] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [query, setQuery] = useState("");
+  const [collectionFilter, setCollectionFilter] = useState("Tümü");
+  const [selectedProductIds, setSelectedProductIds] = useState<string[]>([]);
+  const [bulkPrice, setBulkPrice] = useState("");
+  const [bulkStock, setBulkStock] = useState("");
 
   useEffect(() => {
     fetch("/api/admin/products", { cache: "no-store" })
@@ -149,15 +156,16 @@ export default function AdminProductsPage() {
     const q = query.trim().toLowerCase();
     return products
       .filter((product) => {
-        if (!q) return true;
+        if (collectionFilter !== "Tümü" && product.collection !== collectionFilter) return false;
         return (
+          !q ||
           product.name.toLowerCase().includes(q) ||
           product.slug.toLowerCase().includes(q) ||
           product.collection.toLowerCase().includes(q)
         );
       })
       .sort((a, b) => a.stock - b.stock);
-  }, [products, query]);
+  }, [collectionFilter, products, query]);
 
   const inventoryStats = useMemo(() => {
     const totalStock = products.reduce((sum, product) => sum + product.stock, 0);
@@ -178,6 +186,75 @@ export default function AdminProductsPage() {
     const healthy = products.filter((product) => product.stock > 5).length;
     return Math.round((healthy / products.length) * 100);
   }, [products]);
+
+  const collectionOptions = useMemo(
+    () => ["Tümü", ...Array.from(new Set(products.map((product) => product.collection)))],
+    [products],
+  );
+
+  const selectedProducts = useMemo(
+    () => products.filter((product) => selectedProductIds.includes(product.id)),
+    [products, selectedProductIds],
+  );
+
+  function toggleSelectedProduct(productId: string) {
+    setSelectedProductIds((prev) =>
+      prev.includes(productId) ? prev.filter((id) => id !== productId) : [...prev, productId],
+    );
+  }
+
+  async function applyBulkUpdate(mode: "price" | "stock") {
+    const targetProducts = selectedProducts;
+    if (targetProducts.length === 0) {
+      setError("Önce ürün seçin.");
+      return;
+    }
+
+    const normalizedValue = mode === "price" ? Math.max(0, Math.trunc(Number(bulkPrice || 0))) : Math.max(0, Math.trunc(Number(bulkStock || 0)));
+    if (!Number.isFinite(normalizedValue)) {
+      setError("Geçerli bir değer girin.");
+      return;
+    }
+
+    setError(null);
+    try {
+      for (const product of targetProducts) {
+        const payload = {
+          slug: product.slug,
+          name: product.name,
+          category: product.category,
+          description: product.description,
+          price: mode === "price" ? normalizedValue : product.price,
+          material: product.material,
+          image: product.image,
+          images: product.images ?? [],
+          collection: product.collection,
+          finish: product.finish,
+          stock: mode === "stock" ? normalizedValue : product.stock,
+          leadTimeDays: product.leadTimeDays,
+          tags: product.tags,
+          seoKeywords: product.seoKeywords ?? [],
+          coatingOptions: product.coatingOptions ?? [],
+          isNew: product.isNew ?? false,
+          isLimited: product.isLimited ?? false,
+        };
+        const res = await fetch(`/api/admin/products/${product.slug}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        if (!res.ok) {
+          throw new Error("Toplu güncelleme başarısız.");
+        }
+      }
+      await refresh();
+      setSelectedProductIds([]);
+      setBulkPrice("");
+      setBulkStock("");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Toplu güncelleme başarısız.");
+    }
+  }
 
   function setCoatingEnabled(enabled: boolean) {
     setForm((prev) => {
@@ -244,6 +321,7 @@ export default function AdminProductsPage() {
       stock: String(p.stock),
       leadTimeDays: String(p.leadTimeDays),
       tags: p.tags.join(", "),
+      seoKeywords: (p.seoKeywords ?? []).join(", "),
       isNew: p.isNew ?? false,
       isLimited: p.isLimited ?? false,
       hasCoating: Boolean(p.coatingOptions && p.coatingOptions.length > 0),
@@ -287,6 +365,7 @@ export default function AdminProductsPage() {
       stock: Number(form.stock || "0"),
       leadTimeDays: Number(form.leadTimeDays || "0"),
       tags: form.tags,
+      seoKeywords: form.seoKeywords,
       coatingOptions,
       isNew: form.isNew,
       isLimited: form.isLimited,
@@ -464,8 +543,14 @@ export default function AdminProductsPage() {
             </div>
             {formPreviewUrl && (
               <div className="rounded-xl border border-[#D4AF37]/20 bg-black/35 p-2 shadow-[0_0_24px_rgba(212,175,55,0.14)]">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={formPreviewUrl} alt="Önizleme" className="h-14 w-14 object-contain" />
+                <Image
+                  src={formPreviewUrl}
+                  alt="Önizleme"
+                  width={64}
+                  height={64}
+                  sizes="64px"
+                  className="h-14 w-14 object-contain"
+                />
                 <p className="mt-1 text-center text-[10px] text-zinc-400">{form.images.length} görsel</p>
               </div>
             )}
@@ -599,10 +684,12 @@ export default function AdminProductsPage() {
                 <div className="mt-3 grid grid-cols-3 gap-2 sm:grid-cols-4">
                   {form.images.map((url, index) => (
                     <div key={`${url}-${index}`} className="rounded-lg border border-[#D4AF37]/20 bg-black/30 p-2">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
+                      <Image
                         src={normalizeDisplayImageUrl(url)}
                         alt={`Görsel ${index + 1}`}
+                        width={300}
+                        height={300}
+                        sizes="(max-width: 768px) 25vw, 160px"
                         className="h-16 w-full object-contain"
                       />
                       <button
@@ -642,6 +729,16 @@ export default function AdminProductsPage() {
                 value={form.tags}
                 onChange={(e) => setForm((prev) => ({ ...prev, tags: e.target.value }))}
                 placeholder="Minimal, Yeni Sezon"
+                className={fieldClass}
+              />
+            </label>
+
+            <label className="block text-sm md:col-span-2">
+              <span className="mb-1 block text-zinc-300">SEO Keywords (virgülle)</span>
+              <input
+                value={form.seoKeywords}
+                onChange={(e) => setForm((prev) => ({ ...prev, seoKeywords: e.target.value }))}
+                placeholder="pirinç takı, atelier, lüks kolye"
                 className={fieldClass}
               />
             </label>
@@ -764,6 +861,86 @@ export default function AdminProductsPage() {
             />
           </div>
 
+          <div className="mb-4 grid gap-3 md:grid-cols-[1fr_auto]">
+            <label className="block text-sm">
+              <span className="mb-1 block text-xs tracking-[0.18em] text-zinc-400">Koleksiyon</span>
+              <select
+                value={collectionFilter}
+                onChange={(e) => setCollectionFilter(e.target.value)}
+                className={fieldClass}
+              >
+                {collectionOptions.map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button
+              type="button"
+              onClick={() => {
+                setCollectionFilter("Tümü");
+                setQuery("");
+              }}
+              className="self-end rounded-xl border border-[#D4AF37]/35 px-4 py-2 text-sm text-[#D4AF37] transition hover:bg-[#D4AF37]/10"
+            >
+              Filtreyi Temizle
+            </button>
+          </div>
+
+          <div className="mb-4 rounded-2xl border border-[#D4AF37]/18 bg-black/20 p-4">
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+              <p className="text-xs tracking-[0.18em] text-[#D4AF37]">
+                Toplu İşlem {selectedProductIds.length > 0 ? `(${selectedProductIds.length})` : ""}
+              </p>
+              <button
+                type="button"
+                onClick={() =>
+                  setSelectedProductIds(
+                    selectedProductIds.length === filteredProducts.length
+                      ? []
+                      : filteredProducts.map((product) => product.id),
+                  )
+                }
+                className="text-xs text-zinc-400 transition hover:text-[#D4AF37]"
+              >
+                {selectedProductIds.length === filteredProducts.length ? "Seçimi Kaldır" : "Hepsini Seç"}
+              </button>
+            </div>
+            <div className="grid gap-3 lg:grid-cols-[1fr_1fr_auto_auto]">
+              <input
+                value={bulkPrice}
+                onChange={(e) => setBulkPrice(e.target.value)}
+                type="number"
+                min={0}
+                placeholder="Toplu fiyat"
+                className={fieldClass}
+              />
+              <input
+                value={bulkStock}
+                onChange={(e) => setBulkStock(e.target.value)}
+                type="number"
+                min={0}
+                placeholder="Toplu stok"
+                className={fieldClass}
+              />
+              <button
+                type="button"
+                onClick={() => void applyBulkUpdate("price")}
+                className="rounded-xl border border-[#D4AF37]/35 px-4 py-2 text-sm text-[#D4AF37] transition hover:bg-[#D4AF37]/10"
+              >
+                Fiyat Güncelle
+              </button>
+              <button
+                type="button"
+                onClick={() => void applyBulkUpdate("stock")}
+                className="rounded-xl border border-[#D4AF37] bg-[#D4AF37] px-4 py-2 text-sm font-semibold text-black transition hover:bg-transparent hover:text-[#D4AF37]"
+              >
+                Stok Güncelle
+              </button>
+            </div>
+          </div>
+
           {loading ? (
             <div className="py-10 text-center text-zinc-400">Yükleniyor...</div>
           ) : filteredProducts.length === 0 ? (
@@ -772,10 +949,20 @@ export default function AdminProductsPage() {
             <div className="space-y-3">
               {filteredProducts.slice(0, 30).map((product) => {
                 const meta = stockMeta(product.stock);
+                const selected = selectedProductIds.includes(product.id);
                 return (
-                <div key={product.slug} className="rounded-2xl border border-[#D4AF37]/20 bg-black/25 p-4 transition hover:border-[#D4AF37]/45 hover:bg-black/35">
+                <div key={product.slug} className={`rounded-2xl border bg-black/25 p-4 transition hover:border-[#D4AF37]/45 hover:bg-black/35 ${selected ? "border-[#D4AF37]/65 shadow-[0_0_0_1px_rgba(212,175,55,0.35)]" : "border-[#D4AF37]/20"}`}>
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
+                        <label className="mb-2 inline-flex items-center gap-2 text-xs text-zinc-400">
+                          <input
+                            type="checkbox"
+                            checked={selected}
+                            onChange={() => toggleSelectedProduct(product.id)}
+                            className="accent-[#D4AF37]"
+                          />
+                          Seç
+                        </label>
                         <p className="truncate text-sm font-semibold text-zinc-100">{product.name}</p>
                         <p className="mt-1 text-xs text-zinc-400">{product.category} • {product.collection}</p>
                         <p className="mt-2 text-sm font-semibold text-[#D4AF37]">

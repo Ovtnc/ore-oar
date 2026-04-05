@@ -1,7 +1,13 @@
 import { NextResponse } from "next/server";
 import { requireAdminApiAccess } from "@/lib/admin-auth";
-import { deleteOrderAndRestoreStock, getOrderById, StockConflictError, updateOrderStatus } from "@/lib/db-orders";
-import { sendOrderStatusUpdateToCustomer } from "@/lib/email";
+import {
+  deleteOrderAndRestoreStock,
+  getOrderById,
+  StockConflictError,
+  updateOrderFields,
+  updateOrderStatus,
+} from "@/lib/db-orders";
+import { sendOrderStatusUpdateToCustomer, sendPaymentApprovedToCustomer } from "@/lib/email";
 import { OrderStatus } from "@/lib/types";
 
 const allowedStatuses: OrderStatus[] = [
@@ -32,6 +38,14 @@ async function updateStatus(id: string, status: string) {
     } catch {
       // E-posta hatası durum güncellemesini bozmasın.
     }
+
+    if (nextStatus === "Ödeme Alındı") {
+      try {
+        await sendPaymentApprovedToCustomer({ ...updated, _id: undefined }, id);
+      } catch {
+        // Ek onay maili başarısız olsa da durum kaydı korunur.
+      }
+    }
   }
 
   return NextResponse.json({ ok: true });
@@ -42,7 +56,16 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   if (!guard.ok) return guard.response;
 
   const { id } = await params;
-  const body = (await request.json()) as { status?: string };
+  const body = (await request.json()) as { status?: string; trackingNumber?: string };
+
+  if (typeof body.trackingNumber !== "undefined") {
+    const trackingNumber = String(body.trackingNumber ?? "").trim();
+    const order = await getOrderById(id);
+    if (!order) return NextResponse.json({ error: "Not found" }, { status: 404 });
+    const patched = await updateOrderFields(id, { trackingNumber: trackingNumber || null });
+    return NextResponse.json({ ok: true, trackingNumber: patched.trackingNumber });
+  }
+
   return updateStatus(id, body.status ?? "");
 }
 

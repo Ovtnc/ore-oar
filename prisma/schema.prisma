@@ -15,6 +15,7 @@ model User {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
   orders       Order[]
+  reviews      Review[]
 
   @@map("users")
 }
@@ -34,13 +35,34 @@ model Product {
   stock          Int      @default(0)
   leadTimeDays   Int      @default(3)
   tags           String[]
+  seoKeywords    String[] @default([])
   coatingOptions Json?
   isNew          Boolean  @default(false)
   isLimited      Boolean  @default(false)
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
+  reviews        Review[]
 
   @@map("products")
+}
+
+model Coupon {
+  id                   String   @id @default(cuid())
+  code                 String   @unique
+  discountType         String
+  discountValue        Int
+  minOrderTotal        Int      @default(0)
+  usageLimit           Int?
+  usedCount            Int      @default(0)
+  validFrom            DateTime
+  validUntil           DateTime
+  collectionRestriction String?
+  isActive             Boolean  @default(true)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  @@index([isActive, validUntil])
+  @@map("coupons")
 }
 
 model Order {
@@ -54,6 +76,10 @@ model Order {
   total                     Int
   subtotal                  Int?
   shippingFee               Int?
+  couponCode                String?
+  couponDiscountPercent      Int?
+  couponDiscountAmount       Int?
+  trackingNumber             String?
   createdAt                 DateTime @default(now())
   updatedAt                 DateTime @updatedAt
   paymentIban               String?
@@ -99,6 +125,25 @@ model SupportRequest {
   @@index([orderId])
   @@index([status, createdAt(sort: Desc)])
   @@map("support_requests")
+}
+
+model Review {
+  id        String   @id @default(cuid())
+  userId    String
+  productId String
+  rating    Int
+  comment   String
+  images    String[] @default([])
+  status    String   @default("pending")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([productId, status, createdAt(sort: Desc)])
+  @@index([status, createdAt(sort: Desc)])
+  @@map("reviews")
 }
 
 model AppSetting {

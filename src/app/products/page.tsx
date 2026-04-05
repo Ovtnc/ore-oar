@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { fetchProducts } from "@/lib/db-products";
 import { ProductsCatalog } from "@/components/products-catalog";
 
@@ -49,10 +50,24 @@ export default async function ProductsPage() {
 
       <div className="mt-12 grid gap-3 rounded-2xl border border-[#D4AF37]/20 bg-zinc-900/40 p-5 md:grid-cols-2">
         {collectionSummary.map((collection) => (
-          <div key={collection.name} className="rounded-xl border border-[#D4AF37]/15 bg-black/30 p-4">
+          <Link
+            key={collection.name}
+            href={`/collections/${collection.name
+              .trim()
+              .toLowerCase()
+              .replace(/ğ/g, "g")
+              .replace(/ü/g, "u")
+              .replace(/ş/g, "s")
+              .replace(/ı/g, "i")
+              .replace(/ö/g, "o")
+              .replace(/ç/g, "c")
+              .replace(/[^a-z0-9]+/g, "-")
+              .replace(/^-+|-+$/g, "")}`}
+            className="rounded-xl border border-[#D4AF37]/15 bg-black/30 p-4 transition hover:border-[#D4AF37]/50"
+          >
             <p className="text-sm font-semibold text-[#D4AF37]">{collection.name}</p>
             <p className="mt-1 text-sm text-zinc-300">{collection.note}</p>
-          </div>
+          </Link>
         ))}
       </div>
     </section>

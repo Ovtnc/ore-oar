@@ -155,7 +155,8 @@ export default async function Home() {
                     fill
                     sizes="(max-width: 768px) 100vw, 33vw"
                     className="object-cover transition duration-500 group-hover:scale-105"
-                    unoptimized
+                    loading="lazy"
+                    fetchPriority="low"
                   />
                   <div className="absolute inset-0 bg-gradient-to-t from-black/68 via-black/10 to-transparent" />
                   <div className="absolute bottom-0 left-0 right-0 p-4">
@@ -170,7 +171,7 @@ export default async function Home() {
         </section>
       )}
 
-      <section className="mx-auto grid w-full max-w-6xl gap-6 px-4 py-6 md:grid-cols-3 md:px-8">
+      <section id="nasil-calisiyoruz" className="mx-auto grid w-full max-w-6xl gap-6 px-4 py-6 md:grid-cols-3 md:px-8">
         {processSteps.map((step) => (
           <article key={step.title} className="lux-card p-5 transition hover:border-[#D4AF37]/45 hover:bg-black/25">
             <p className="text-xs tracking-[0.24em] text-[#D4AF37]">{step.title}</p>

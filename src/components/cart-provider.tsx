@@ -18,6 +18,8 @@ type CartContextValue = {
   detailedItems: DetailedCartItem[];
   catalogLoaded: boolean;
   addToCart: (productId: string, coatingOptionId?: string) => void;
+  incrementItem: (itemKey: string) => void;
+  decrementItem: (itemKey: string) => void;
   removeFromCart: (itemKey: string) => void;
   updateQuantity: (itemKey: string, quantity: number) => void;
   clearCart: () => void;
@@ -129,6 +131,16 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         }
         return [...prev, { itemKey, productId, coatingOptionId, quantity: 1 }];
       }),
+    incrementItem: (itemKey) =>
+      setCart((prev) =>
+        prev.map((item) => (item.itemKey === itemKey ? { ...item, quantity: item.quantity + 1 } : item)),
+      ),
+    decrementItem: (itemKey) =>
+      setCart((prev) =>
+        prev
+          .map((item) => (item.itemKey === itemKey ? { ...item, quantity: item.quantity - 1 } : item))
+          .filter((item) => item.quantity > 0),
+      ),
     removeFromCart: (itemKey) =>
       setCart((prev) => prev.filter((item) => item.itemKey !== itemKey)),
     updateQuantity: (itemKey, quantity) =>

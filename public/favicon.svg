@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" fill="none">
+  <defs>
+    <linearGradient id="gold" x1="52" y1="28" x2="204" y2="224" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#F6E1A5" />
+      <stop offset="38%" stop-color="#D4AF37" />
+      <stop offset="100%" stop-color="#8F6B16" />
+    </linearGradient>
+  </defs>
+  <g stroke="url(#gold)" stroke-linecap="round" stroke-linejoin="round">
+    <ellipse cx="128" cy="44" rx="40" ry="18" stroke-width="12" />
+    <path d="M92 52C82 66 76 86 74 112C72 144 82 174 102 202" stroke-width="12" />
+    <path d="M164 52C174 66 180 86 182 112C184 144 174 174 154 202" stroke-width="12" />
+    <path
+      d="M128 60C120 60 114 68 114 78V192C114 205 121 214 128 214C135 214 142 205 142 192V78C142 68 136 60 128 60Z"
+      fill="url(#gold)"
+      stroke="none"
+    />
+    <path d="M128 60C126 74 125 90 125 108V188C125 199 126 208 128 214" stroke="#F6E1A5" stroke-opacity=".45" stroke-width="4" />
+  </g>
+</svg>

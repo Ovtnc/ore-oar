@@ -11,8 +11,10 @@ import {
   calculateOrderTotalWithConfig,
 } from "@/lib/shipping";
 
+const PROGRESS_BAR_THRESHOLD = 2000;
+
 export default function CartPage() {
-  const { cart, detailedItems, total, removeFromCart, updateQuantity, catalogLoaded } = useCart();
+  const { cart, detailedItems, total, removeFromCart, incrementItem, decrementItem, catalogLoaded } = useCart();
   const { isAuthenticated, loading: authLoading } = useAuth();
   const [shippingConfig, setShippingConfig] = useState({
     shippingFee: SHIPPING_FEE,
@@ -47,6 +49,8 @@ export default function CartPage() {
     shippingConfig,
   );
   const totalItems = detailedItems.reduce((sum, item) => sum + item.quantity, 0);
+  const remainingForProgress = Math.max(0, PROGRESS_BAR_THRESHOLD - total);
+  const progressPercent = Math.min(100, Math.round((total / PROGRESS_BAR_THRESHOLD) * 100));
 
   return (
     <section className="mx-auto w-full max-w-6xl px-4 py-10 md:px-8">
@@ -68,6 +72,26 @@ export default function CartPage() {
               {hasFreeShipping ? "Ücretsiz" : `${shippingFee.toLocaleString("tr-TR")} TL`}
             </p>
           </div>
+        </div>
+
+        <div className="mt-5 rounded-2xl border border-[#D4AF37]/22 bg-black/30 p-4">
+          <div className="mb-2 flex items-center justify-between text-xs text-zinc-300">
+            <span>
+              {remainingForProgress > 0
+                ? `Ücretsiz kargo için ${remainingForProgress.toLocaleString("tr-TR")} TL kaldı`
+                : "Ücretsiz kargo hakkı kazanıldı"}
+            </span>
+            <span className="text-[#D4AF37]">%{progressPercent}</span>
+          </div>
+          <div className="h-2 overflow-hidden rounded-full bg-zinc-800/90">
+            <div
+              className="h-full rounded-full bg-[#D4AF37] transition-all duration-500"
+              style={{ width: `${progressPercent}%` }}
+            />
+          </div>
+          <p className="mt-2 text-[11px] text-zinc-500">
+            Baraj: {PROGRESS_BAR_THRESHOLD.toLocaleString("tr-TR")} TL
+          </p>
         </div>
       </div>
 
@@ -94,8 +118,9 @@ export default function CartPage() {
                     alt={item.product.name}
                     fill
                     sizes="120px"
-                    className="object-contain p-2"
-                    unoptimized
+                    className="object-cover"
+                    loading="lazy"
+                    fetchPriority="low"
                   />
                 </div>
 
@@ -119,16 +144,18 @@ export default function CartPage() {
                   <div className="flex items-center gap-2 rounded-full border border-[#D4AF37]/30 bg-black/35 px-2 py-1">
                     <button
                       type="button"
-                      onClick={() => updateQuantity(item.itemKey, item.quantity - 1)}
+                      onClick={() => decrementItem(item.itemKey)}
                       className="h-8 w-8 rounded-full border border-[#D4AF37]/40 text-zinc-200 transition hover:bg-[#D4AF37]/12"
+                      aria-label={`${item.product.name} miktarını azalt`}
                     >
                       -
                     </button>
                     <span className="min-w-6 text-center text-sm">{item.quantity}</span>
                     <button
                       type="button"
-                      onClick={() => updateQuantity(item.itemKey, item.quantity + 1)}
+                      onClick={() => incrementItem(item.itemKey)}
                       className="h-8 w-8 rounded-full border border-[#D4AF37]/40 text-zinc-200 transition hover:bg-[#D4AF37]/12"
+                      aria-label={`${item.product.name} miktarını artır`}
                     >
                       +
                     </button>
@@ -165,6 +192,11 @@ export default function CartPage() {
             </div>
 
             <div className="mt-4 space-y-1 rounded-xl border border-[#D4AF37]/20 bg-black/25 p-3 text-xs text-zinc-400">
+              <p className="text-[#F3D47B]">
+                {remainingForProgress > 0
+                  ? `• Ücretsiz kargo için kalan: ${remainingForProgress.toLocaleString("tr-TR")} TL`
+                  : "• Ücretsiz kargo barajı aşıldı."}
+              </p>
               <p>
                 {hasFreeShipping
                   ? "• Bu siparişte kargo ücretsiz."

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireAdminApiAccess } from "@/lib/admin-auth";
 import { getOrderById, verifyPayment } from "@/lib/db-orders";
-import { sendOrderStatusUpdateToCustomer } from "@/lib/email";
+import { sendOrderStatusUpdateToCustomer, sendPaymentApprovedToCustomer } from "@/lib/email";
 
 export async function POST(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   const guard = await requireAdminApiAccess();
@@ -24,6 +24,12 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
     await sendOrderStatusUpdateToCustomer({ ...updated, _id: undefined }, id, "Ödeme Alındı");
   } catch {
     // Mail başarısız olsa da durum güncellemesi korunur.
+  }
+
+  try {
+    await sendPaymentApprovedToCustomer({ ...updated, _id: undefined }, id);
+  } catch {
+    // Özel onay maili başarısız olsa bile işlemi bozma.
   }
 
   return NextResponse.json({ ok: true, alreadyVerified: false, paymentVerifiedAt: updated.paymentVerifiedAt });

@@ -3,6 +3,11 @@ import { AuthUser, Order, OrderItem, OrderStatus, ShippingInfo } from "@/lib/typ
 import { prisma } from "@/lib/prisma";
 import { fromJson, parseDate, toInputJson, toIsoString } from "@/lib/db-json";
 import { assignLeastUsedPriorityRandomIban } from "@/lib/db-payment-settings";
+import {
+  calculateCouponDiscount,
+  normalizeCouponCode,
+  validateCoupon,
+} from "@/lib/db-coupons";
 import { fetchShippingPricingSettings } from "@/lib/db-shipping-settings";
 import { calculateOrderTotalWithConfig } from "@/lib/shipping";
 import { toSafePrice } from "@/lib/price";
@@ -18,6 +23,7 @@ const EMPTY_SHIPPING: ShippingInfo = {
 };
 
 export class StockConflictError extends Error {}
+export class CouponValidationError extends Error {}
 
 function toPositiveInt(value: unknown) {
   const parsed = Number(value);
@@ -83,6 +89,10 @@ export function serializeOrder(row: PrismaOrder): Order {
     total: row.total,
     subtotal: row.subtotal ?? undefined,
     shippingFee: row.shippingFee ?? undefined,
+    couponCode: row.couponCode ?? undefined,
+    couponDiscountPercent: row.couponDiscountPercent ?? undefined,
+    couponDiscountAmount: row.couponDiscountAmount ?? undefined,
+    trackingNumber: row.trackingNumber ?? undefined,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
     paymentIban: row.paymentIban ?? undefined,
@@ -127,11 +137,27 @@ export async function createOrderForUser(input: {
   items: OrderItem[];
   shipping: ShippingInfo;
   customerNote?: string;
+  couponCode?: string;
 }) {
   const selectedPaymentIban = await assignLeastUsedPriorityRandomIban();
   const subtotal = calculateItemsSubtotal(input.items);
+  const normalizedCouponCode = normalizeCouponCode(input.couponCode);
+  const couponCheck = normalizedCouponCode
+    ? await validateCoupon(normalizedCouponCode, {
+        subtotal,
+        items: input.items,
+      })
+    : null;
+  if (normalizedCouponCode && !couponCheck?.valid) {
+    throw new CouponValidationError(couponCheck?.message ?? "Kupon doğrulanamadı.");
+  }
+
+  const coupon = couponCheck?.coupon ?? null;
+  const couponDiscountAmount = coupon ? calculateCouponDiscount(couponCheck?.eligibleSubtotal ?? subtotal, coupon) : 0;
+  const couponDiscountPercent = coupon && coupon.discountType === "percentage" ? coupon.discountValue : null;
+  const discountedSubtotal = Math.max(0, subtotal - couponDiscountAmount);
   const shippingSettings = await fetchShippingPricingSettings();
-  const totals = calculateOrderTotalWithConfig(subtotal, shippingSettings);
+  const totals = calculateOrderTotalWithConfig(discountedSubtotal, shippingSettings);
   const stockDemand = aggregateStockDemand(input.items);
 
   const created = await prisma.$transaction(async (tx) => {
@@ -151,7 +177,20 @@ export async function createOrderForUser(input: {
       });
     }
 
-    return tx.order.create({
+    if (coupon) {
+      const currentCoupon = await tx.coupon.findUnique({ where: { code: coupon.code } });
+      if (
+        !currentCoupon ||
+        currentCoupon.isActive === false ||
+        new Date(currentCoupon.validUntil).getTime() < Date.now() ||
+        new Date(currentCoupon.validFrom).getTime() > Date.now() ||
+        (currentCoupon.usageLimit != null && currentCoupon.usedCount >= currentCoupon.usageLimit)
+      ) {
+        throw new CouponValidationError("Bu kupon artık geçerli değil.");
+      }
+    }
+
+    const order = await tx.order.create({
       data: {
         userId: input.user.id,
         userEmail: input.user.email,
@@ -161,6 +200,9 @@ export async function createOrderForUser(input: {
         subtotal: totals.subtotal,
         shippingFee: totals.shippingFee,
         total: totals.grandTotal,
+        couponCode: normalizedCouponCode || null,
+        couponDiscountPercent: couponDiscountPercent || null,
+        couponDiscountAmount: couponDiscountAmount || null,
         status: "Beklemede",
         paymentIban: selectedPaymentIban.iban,
         paymentIbanId: selectedPaymentIban.id,
@@ -168,6 +210,23 @@ export async function createOrderForUser(input: {
         paymentIbanAccountHolder: selectedPaymentIban.accountHolderName,
       },
     });
+
+    if (coupon) {
+      const updatedCoupon = await tx.coupon.update({
+        where: { code: coupon.code },
+        data: { usedCount: { increment: 1 } },
+      });
+
+      if (updatedCoupon.usageLimit != null && updatedCoupon.usedCount >= updatedCoupon.usageLimit && updatedCoupon.isActive) {
+        await tx.coupon.update({
+          where: { code: coupon.code },
+          data: { isActive: false },
+        });
+      }
+
+    }
+
+    return order;
   });
 
   return serializeOrder(created);
@@ -208,6 +267,16 @@ export async function deleteOrderAndRestoreStock(id: string) {
         where: { id: product.id },
         data: { stock: { increment: quantity } },
       });
+    }
+
+    if (order.couponCode) {
+      const coupon = await tx.coupon.findUnique({ where: { code: normalizeCouponCode(order.couponCode) } });
+      if (coupon && coupon.usedCount > 0) {
+        await tx.coupon.update({
+          where: { code: coupon.code },
+          data: { usedCount: { decrement: 1 } },
+        });
+      }
     }
 
     await tx.order.delete({ where: { id } });

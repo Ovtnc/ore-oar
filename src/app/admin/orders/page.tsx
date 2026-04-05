@@ -11,10 +11,19 @@ type AdminOrder = {
   createdAt: string;
   updatedAt?: string;
   customerNote?: string;
+  couponCode?: string;
+  couponDiscountAmount?: number;
+  couponDiscountPercent?: number;
+  trackingNumber?: string;
   paymentNotifiedAt?: string;
   paymentVerifiedAt?: string;
   lastPaymentReminderAt?: string;
   paymentReminderCount?: number;
+  paymentVerificationNote?: string;
+  paymentPaidAmount?: number;
+  paymentReceiptUrl?: string;
+  paymentIbanLabel?: string;
+  paymentIbanAccountHolder?: string;
   shipping: ShippingInfo;
   items: OrderItem[];
 };
@@ -85,6 +94,10 @@ export default function AdminOrdersPage() {
   const [verifyingOrderId, setVerifyingOrderId] = useState<string | null>(null);
   const [sendingWhatsappOrderId, setSendingWhatsappOrderId] = useState<string | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
+  const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
+  const [exporting, setExporting] = useState(false);
+  const [exportRange, setExportRange] = useState({ from: "", to: "" });
+  const [trackingDrafts, setTrackingDrafts] = useState<Record<string, string>>({});
 
   useEffect(() => {
     fetch("/api/admin/orders", { cache: "no-store" })
@@ -93,6 +106,35 @@ export default function AdminOrdersPage() {
       .catch(() => setError("Siparişler yüklenemedi."))
       .finally(() => setLoading(false));
   }, []);
+
+  async function exportOrders() {
+    setExporting(true);
+    setError(null);
+    try {
+      const params = new URLSearchParams();
+      if (exportRange.from) params.set("from", exportRange.from);
+      if (exportRange.to) params.set("to", exportRange.to);
+
+      const response = await fetch(`/api/admin/orders/export?${params.toString()}`, {
+        cache: "no-store",
+      });
+      if (!response.ok) {
+        throw new Error("Dışa aktarma başarısız.");
+      }
+
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = "oar-ore-siparisler.csv";
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Dışa aktarma başarısız.");
+    } finally {
+      setExporting(false);
+    }
+  }
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -147,6 +189,11 @@ export default function AdminOrdersPage() {
     return `${start}-${end} / ${filtered.length}`;
   }, [filtered.length, safeCurrentPage]);
 
+  const selectedOrder = useMemo(
+    () => (selectedOrderId ? orders.find((order) => order._id === selectedOrderId) ?? null : null),
+    [orders, selectedOrderId],
+  );
+
   async function updateStatus(orderId: string, status: OrderStatus) {
     setUpdatingOrderId(orderId);
     try {
@@ -159,6 +206,27 @@ export default function AdminOrdersPage() {
       setOrders((prev) => prev.map((o) => (o._id === orderId ? { ...o, status } : o)));
     } catch {
       setError("Sipariş durumu güncellenemedi. Lütfen tekrar deneyin.");
+    } finally {
+      setUpdatingOrderId(null);
+    }
+  }
+
+  async function updateTrackingNumber(orderId: string, trackingNumber: string) {
+    setUpdatingOrderId(orderId);
+    setError(null);
+    try {
+      const response = await fetch(`/api/admin/orders/${orderId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ trackingNumber }),
+      });
+      const data = (await response.json().catch(() => null)) as { error?: string } | null;
+      if (!response.ok) {
+        throw new Error(data?.error ?? "Takip numarası kaydedilemedi.");
+      }
+      setOrders((prev) => prev.map((order) => (order._id === orderId ? { ...order, trackingNumber } : order)));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Takip numarası kaydedilemedi.");
     } finally {
       setUpdatingOrderId(null);
     }
@@ -321,7 +389,7 @@ export default function AdminOrdersPage() {
         </article>
       </div>
 
-      <div className="mb-7 grid gap-3 rounded-2xl border border-[#D4AF37]/25 bg-zinc-900/60 p-4 md:grid-cols-[1fr_220px_auto]">
+      <div className="mb-5 grid gap-3 rounded-2xl border border-[#D4AF37]/25 bg-zinc-900/60 p-4 xl:grid-cols-[1fr_220px_auto]">
         <div>
           <label className="block text-xs tracking-[0.18em] text-zinc-400">Arama</label>
           <input
@@ -355,6 +423,35 @@ export default function AdminOrdersPage() {
           className="h-fit self-end rounded-xl border border-[#D4AF37]/35 px-4 py-2 text-sm text-[#D4AF37] transition hover:bg-[#D4AF37]/12"
         >
           Filtreyi Temizle
+        </button>
+      </div>
+
+      <div className="mb-7 grid gap-3 rounded-2xl border border-[#D4AF37]/20 bg-black/20 p-4 lg:grid-cols-[1fr_1fr_auto]">
+        <label className="block text-sm">
+          <span className="mb-1 block text-xs tracking-[0.18em] text-zinc-400">Tarih Başlangıç</span>
+          <input
+            type="date"
+            value={exportRange.from}
+            onChange={(event) => setExportRange((prev) => ({ ...prev, from: event.target.value }))}
+            className="w-full rounded-xl border border-[#D4AF37]/25 bg-black/30 px-3 py-2 outline-none transition focus:border-[#D4AF37]"
+          />
+        </label>
+        <label className="block text-sm">
+          <span className="mb-1 block text-xs tracking-[0.18em] text-zinc-400">Tarih Bitiş</span>
+          <input
+            type="date"
+            value={exportRange.to}
+            onChange={(event) => setExportRange((prev) => ({ ...prev, to: event.target.value }))}
+            className="w-full rounded-xl border border-[#D4AF37]/25 bg-black/30 px-3 py-2 outline-none transition focus:border-[#D4AF37]"
+          />
+        </label>
+        <button
+          type="button"
+          onClick={() => void exportOrders()}
+          disabled={exporting}
+          className="self-end rounded-xl border border-[#D4AF37] bg-[#D4AF37] px-4 py-3 text-sm font-semibold text-black transition disabled:opacity-50"
+        >
+          {exporting ? "Aktarılıyor..." : "Dışa Aktar (CSV)"}
         </button>
       </div>
 
@@ -397,7 +494,10 @@ export default function AdminOrdersPage() {
             {paginatedOrders.map((order) => (
             <article
               key={order._id}
-              className="rounded-2xl border border-[#D4AF37]/20 bg-[linear-gradient(150deg,rgba(25,25,25,0.86),rgba(10,10,10,0.94))] p-5 shadow-[0_14px_36px_rgba(0,0,0,0.35)]"
+              role="button"
+              tabIndex={0}
+              onClick={() => setSelectedOrderId(order._id)}
+              className="cursor-pointer rounded-2xl border border-[#D4AF37]/20 bg-[linear-gradient(150deg,rgba(25,25,25,0.86),rgba(10,10,10,0.94))] p-5 shadow-[0_14px_36px_rgba(0,0,0,0.35)] transition hover:border-[#D4AF37]/45"
             >
               <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_auto] md:items-start">
                 <div className="min-w-0 space-y-2">
@@ -424,6 +524,7 @@ export default function AdminOrdersPage() {
                   <select
                     value={order.status}
                     disabled={updatingOrderId === order._id || deletingOrderId === order._id}
+                    onClick={(e) => e.stopPropagation()}
                     onChange={(e) => updateStatus(order._id, e.target.value as OrderStatus)}
                     className="rounded-xl border border-[#D4AF37]/35 bg-black/45 px-3 py-2 text-sm outline-none transition focus:border-[#D4AF37] disabled:cursor-not-allowed disabled:opacity-60"
                   >
@@ -437,16 +538,22 @@ export default function AdminOrdersPage() {
                     <div className="mt-1 flex flex-wrap items-center gap-2 md:justify-end">
                       <button
                         type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          sendPaymentReminder(order._id, "gentle");
+                        }}
                         disabled={remindingOrderId === order._id}
-                        onClick={() => sendPaymentReminder(order._id, "gentle")}
                         className="rounded-lg border border-[#D4AF37]/35 px-2.5 py-1 text-[11px] text-[#D4AF37] transition hover:bg-[#D4AF37]/12 disabled:opacity-50"
                       >
                         {remindingOrderId === order._id ? "Gönderiliyor..." : "Hatırlatma Maili"}
                       </button>
                       <button
                         type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          sendPaymentReminder(order._id, "urgent");
+                        }}
                         disabled={remindingOrderId === order._id}
-                        onClick={() => sendPaymentReminder(order._id, "urgent")}
                         className="rounded-lg border border-amber-400/35 px-2.5 py-1 text-[11px] text-amber-200 transition hover:bg-amber-500/10 disabled:opacity-50"
                       >
                         Acil Hatırlatma
@@ -454,8 +561,11 @@ export default function AdminOrdersPage() {
                       {!order.paymentVerifiedAt && (
                         <button
                           type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            verifyPayment(order._id);
+                          }}
                           disabled={verifyingOrderId === order._id}
-                          onClick={() => verifyPayment(order._id)}
                           className="rounded-lg border border-emerald-400/45 px-2.5 py-1 text-[11px] text-emerald-200 transition hover:bg-emerald-500/10 disabled:opacity-50"
                         >
                           {verifyingOrderId === order._id ? "İşleniyor..." : "Ödeme Alındı Olarak İşaretle"}
@@ -481,24 +591,33 @@ export default function AdminOrdersPage() {
                   <div className="mt-1 flex flex-wrap items-center gap-2 md:justify-end">
                     <button
                       type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        sendQuickWhatsappMessage(order._id, "iban_and_receipt");
+                      }}
                       disabled={sendingWhatsappOrderId === order._id}
-                      onClick={() => sendQuickWhatsappMessage(order._id, "iban_and_receipt")}
                       className="rounded-lg border border-emerald-400/45 px-2.5 py-1 text-[11px] text-emerald-200 transition hover:bg-emerald-500/10 disabled:opacity-50"
                     >
                       {sendingWhatsappOrderId === order._id ? "Hazırlanıyor..." : "WA: IBAN + Dekont"}
                     </button>
                     <button
                       type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        sendQuickWhatsappMessage(order._id, "payment_not_received");
+                      }}
                       disabled={sendingWhatsappOrderId === order._id}
-                      onClick={() => sendQuickWhatsappMessage(order._id, "payment_not_received")}
                       className="rounded-lg border border-amber-400/40 px-2.5 py-1 text-[11px] text-amber-200 transition hover:bg-amber-500/10 disabled:opacity-50"
                     >
                       WA: Ödeme Gelmedi
                     </button>
                     <button
                       type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        sendQuickWhatsappMessage(order._id, "order_created");
+                      }}
                       disabled={sendingWhatsappOrderId === order._id}
-                      onClick={() => sendQuickWhatsappMessage(order._id, "order_created")}
                       className="rounded-lg border border-sky-400/40 px-2.5 py-1 text-[11px] text-sky-200 transition hover:bg-sky-500/10 disabled:opacity-50"
                     >
                       WA: Sipariş Oluştu
@@ -506,8 +625,11 @@ export default function AdminOrdersPage() {
                   </div>
                   <button
                     type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      deleteOrder(order._id);
+                    }}
                     disabled={deletingOrderId === order._id}
-                    onClick={() => deleteOrder(order._id)}
                     className="mt-1 rounded-lg border border-red-400/35 px-2.5 py-1 text-[11px] text-red-200 transition hover:bg-red-500/10 disabled:opacity-50"
                   >
                     {deletingOrderId === order._id ? "Siliniyor..." : "Siparişi Sil"}
@@ -581,6 +703,148 @@ export default function AdminOrdersPage() {
             </article>
             ))}
           </div>
+
+          {selectedOrder && (
+            <div className="fixed inset-0 z-50 flex justify-end bg-black/60 backdrop-blur-sm">
+              <button
+                type="button"
+                aria-label="Kapat"
+                className="absolute inset-0 cursor-default"
+                onClick={() => setSelectedOrderId(null)}
+              />
+              <aside className="relative z-10 h-full w-full max-w-[640px] overflow-y-auto border-l border-[#D4AF37]/25 bg-[linear-gradient(180deg,rgba(16,16,16,0.98),rgba(6,6,6,0.99))] p-6 shadow-[0_0_60px_rgba(0,0,0,0.55)]">
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <p className="text-xs tracking-[0.22em] text-[#D4AF37]">SİPARİŞ DETAYI</p>
+                    <h2 className="mt-2 text-2xl font-semibold text-zinc-100">#{selectedOrder._id}</h2>
+                    <p className="mt-1 text-sm text-zinc-400">{selectedOrder.shipping.fullName}</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedOrderId(null)}
+                    className="rounded-xl border border-[#D4AF37]/35 px-3 py-2 text-sm text-[#D4AF37] transition hover:bg-[#D4AF37]/10"
+                  >
+                    Kapat
+                  </button>
+                </div>
+
+                <div className="mt-5 grid gap-3 sm:grid-cols-2">
+                  <div className="rounded-2xl border border-[#D4AF37]/18 bg-black/25 p-4">
+                    <p className="text-xs tracking-[0.18em] text-zinc-400">MÜŞTERİ</p>
+                    <p className="mt-2 text-sm text-zinc-100">{selectedOrder.shipping.fullName}</p>
+                    <p className="mt-1 text-sm text-zinc-300">{selectedOrder.shipping.email}</p>
+                    <p className="mt-1 text-sm text-zinc-300">{selectedOrder.shipping.phone}</p>
+                  </div>
+                  <div className="rounded-2xl border border-[#D4AF37]/18 bg-black/25 p-4">
+                    <p className="text-xs tracking-[0.18em] text-zinc-400">KARGO ADRESİ</p>
+                    <p className="mt-2 text-sm leading-relaxed text-zinc-200">
+                      {selectedOrder.shipping.address}
+                      <br />
+                      {selectedOrder.shipping.city}
+                      {selectedOrder.shipping.postalCode ? `, ${selectedOrder.shipping.postalCode}` : ""}
+                      <br />
+                      {selectedOrder.shipping.country}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="mt-3 rounded-2xl border border-[#D4AF37]/18 bg-black/25 p-4">
+                  <p className="text-xs tracking-[0.18em] text-zinc-400">DURUM GÜNCELLE</p>
+                  <div className="mt-3 grid gap-3 sm:grid-cols-[1fr_auto]">
+                    <select
+                      value={selectedOrder.status}
+                      onChange={(e) => updateStatus(selectedOrder._id, e.target.value as OrderStatus)}
+                      className="rounded-xl border border-[#D4AF37]/25 bg-black/40 px-3 py-2 text-sm outline-none transition focus:border-[#D4AF37]"
+                    >
+                      {statuses.map((status) => (
+                        <option key={status} value={status}>
+                          {status}
+                        </option>
+                      ))}
+                    </select>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() => verifyPayment(selectedOrder._id)}
+                        className="rounded-xl border border-emerald-400/45 px-3 py-2 text-sm text-emerald-200 transition hover:bg-emerald-500/10"
+                      >
+                        Ödeme Onayla
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => sendQuickWhatsappMessage(selectedOrder._id, "iban_and_receipt")}
+                        className="rounded-xl border border-[#D4AF37]/35 px-3 py-2 text-sm text-[#D4AF37] transition hover:bg-[#D4AF37]/10"
+                      >
+                        Hızlı WhatsApp
+                      </button>
+                      <Link
+                        href={`/admin/orders/${selectedOrder._id}/label`}
+                        className="rounded-xl border border-sky-400/35 px-3 py-2 text-sm text-sky-200 transition hover:bg-sky-500/10"
+                      >
+                        Etiket Yazdır
+                      </Link>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mt-3 rounded-2xl border border-[#D4AF37]/18 bg-black/25 p-4">
+                  <p className="text-xs tracking-[0.18em] text-zinc-400">KARGO TAKİP NO</p>
+                  <div className="mt-3 flex gap-2">
+                    <input
+                      value={trackingDrafts[selectedOrder._id] ?? selectedOrder.trackingNumber ?? ""}
+                      onChange={(e) =>
+                        setTrackingDrafts((prev) => ({ ...prev, [selectedOrder._id]: e.target.value }))
+                      }
+                      placeholder="Takip numarası girin"
+                      className="min-w-0 flex-1 rounded-xl border border-[#D4AF37]/25 bg-black/40 px-3 py-2 text-sm outline-none transition focus:border-[#D4AF37]"
+                    />
+                    <button
+                      type="button"
+                      onClick={() =>
+                        void updateTrackingNumber(
+                          selectedOrder._id,
+                          trackingDrafts[selectedOrder._id] ?? selectedOrder.trackingNumber ?? "",
+                        )
+                      }
+                      className="rounded-xl border border-[#D4AF37] bg-[#D4AF37] px-3 py-2 text-sm font-semibold text-black"
+                    >
+                      Kaydet
+                    </button>
+                  </div>
+                </div>
+
+                <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                  <div className="rounded-2xl border border-[#D4AF37]/18 bg-black/25 p-4">
+                    <p className="text-xs tracking-[0.18em] text-zinc-400">ÜRÜN DETAYLARI</p>
+                    <div className="mt-3 space-y-2">
+                      {selectedOrder.items.map((item) => (
+                        <div key={`${item.productId}-${item.name}`} className="rounded-xl border border-[#D4AF37]/12 bg-black/35 p-3">
+                          <p className="text-sm text-zinc-100">{item.name}</p>
+                          <p className="mt-1 text-xs text-zinc-400">
+                            Kategori: {item.name.includes("Küpe") ? "Küpe" : item.name.includes("Bileklik") ? "Bileklik" : item.name.includes("Pin") ? "Pin" : item.name.includes("Anahtarlık") ? "Anahtarlık" : "Kolye"}
+                          </p>
+                          <p className="mt-1 text-xs text-zinc-400">
+                            Kaplama: {item.coatingName ?? "Yok"} • {item.quantity} adet
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="rounded-2xl border border-[#D4AF37]/18 bg-black/25 p-4">
+                    <p className="text-xs tracking-[0.18em] text-zinc-400">YAZDIRILABİLİR FORM</p>
+                    <div className="mt-3 space-y-2 text-sm text-zinc-300">
+                      <p>Sipariş Mesajı: {selectedOrder.customerNote || "Yok"}</p>
+                      <p>Kupon: {selectedOrder.couponCode || "Yok"}</p>
+                      <p>İndirim: {selectedOrder.couponDiscountAmount ? `-${selectedOrder.couponDiscountAmount.toLocaleString("tr-TR")} TL` : "Yok"}</p>
+                      <p>Kargo Takip: {selectedOrder.trackingNumber || "Girilmedi"}</p>
+                      <p>Toplam: {selectedOrder.total.toLocaleString("tr-TR")} TL</p>
+                    </div>
+                  </div>
+                </div>
+              </aside>
+            </div>
+          )}
         </div>
       )}
     </section>

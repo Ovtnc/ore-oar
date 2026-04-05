@@ -143,6 +143,88 @@ function buildOrderHtml(order: Order, orderId: string) {
   });
 }
 
+function buildOrderConfirmationHtml(order: Order, orderId: string) {
+  const couponBlock =
+    order.couponCode && Number(order.couponDiscountAmount ?? 0) > 0
+      ? `
+        <tr>
+          <td style="padding:12px 14px;font-size:14px;color:#4f4f4f;border-top:1px solid #efdfbb;">
+            <b style="color:#222;">Kupon:</b> ${escapeHtml(order.couponCode)} (${escapeHtml(order.couponDiscountPercent ?? 0)}%)
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:12px 14px;font-size:14px;color:#4f4f4f;border-top:1px solid #efdfbb;">
+            <b style="color:#222;">İndirim:</b> -${formatCurrency(order.couponDiscountAmount)}
+          </td>
+        </tr>`
+      : "";
+
+  const contentHtml = `
+    <p style="margin:0 0 12px;color:#4f4f4f;font-size:14px;line-height:1.6;">
+      Merhaba <b style="color:#222;">${escapeHtml(order.shipping.fullName)}</b>, siparişinizi aldık. Üretim süreciniz başlatıldı.
+    </p>
+    <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="margin-bottom:14px;border:1px solid #e8d6a8;border-radius:12px;overflow:hidden;background:#fffdf8;">
+      <tr>
+        <td style="padding:12px 14px;font-size:14px;color:#4f4f4f;"><b style="color:#222;">Sipariş No:</b> ${escapeHtml(orderId)}</td>
+      </tr>
+      <tr>
+        <td style="padding:12px 14px;font-size:14px;color:#4f4f4f;border-top:1px solid #efdfbb;"><b style="color:#222;">Durum:</b> ${statusPill(order.status)}</td>
+      </tr>
+      <tr>
+        <td style="padding:12px 14px;font-size:14px;color:#4f4f4f;border-top:1px solid #efdfbb;"><b style="color:#222;">Ödeme Yöntemi:</b> Havale / EFT</td>
+      </tr>
+      <tr>
+        <td style="padding:12px 14px;font-size:14px;color:#4f4f4f;border-top:1px solid #efdfbb;"><b style="color:#222;">Toplam:</b> ${formatCurrency(order.total)}</td>
+      </tr>
+      ${couponBlock}
+    </table>
+    <p style="margin:0 0 8px;color:#4f4f4f;font-size:14px;"><b style="color:#222;">Teslimat:</b> ${escapeHtml(order.shipping.address)}, ${escapeHtml(order.shipping.city)}, ${escapeHtml(order.shipping.country)}</p>
+    <p style="margin:0;color:#6e6e6e;font-size:13px;line-height:1.6;">
+      Ödeme adımına geçtiğinizde WhatsApp butonu üzerinden IBAN bilgisini paylaşacağız. Sipariş durumunuzu hesabınızdaki <b style="color:#8f6b19;">Siparişlerim</b> sayfasından takip edebilirsiniz.
+    </p>
+  `;
+
+  return buildEmailLayout({
+    preheader: `Siparişiniz oluşturuldu #${orderId}`,
+    title: "Siparişiniz Oluşturuldu",
+    subtitle: "Oar & Ore atölyesi siparişinizi aldı ve üretim sürecine hazırlıyor.",
+    metaLabel: "Sipariş No",
+    metaValue: orderId,
+    contentHtml,
+  });
+}
+
+function buildPaymentApprovedHtml(order: Order, orderId: string) {
+  const contentHtml = `
+    <p style="margin:0 0 12px;color:#4f4f4f;font-size:14px;line-height:1.6;">
+      Merhaba <b style="color:#222;">${escapeHtml(order.shipping.fullName)}</b>, ödemeniz onaylandı ve siparişiniz artık üretim sürecine geçti.
+    </p>
+    <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="margin-bottom:14px;border:1px solid #e8d6a8;border-radius:12px;overflow:hidden;background:#fffdf8;">
+      <tr>
+        <td style="padding:12px 14px;font-size:14px;color:#4f4f4f;"><b style="color:#222;">Sipariş No:</b> ${escapeHtml(orderId)}</td>
+      </tr>
+      <tr>
+        <td style="padding:12px 14px;font-size:14px;color:#4f4f4f;border-top:1px solid #efdfbb;"><b style="color:#222;">Yeni Durum:</b> ${statusPill("Ödeme Alındı")}</td>
+      </tr>
+      <tr>
+        <td style="padding:12px 14px;font-size:14px;color:#4f4f4f;border-top:1px solid #efdfbb;"><b style="color:#222;">Toplam:</b> ${formatCurrency(order.total)}</td>
+      </tr>
+    </table>
+    <p style="margin:0;color:#6e6e6e;font-size:13px;line-height:1.6;">
+      Siparişinizin kalan adımlarını hesabınızdaki <b style="color:#8f6b19;">Siparişlerim</b> sayfasından takip edebilirsiniz.
+    </p>
+  `;
+
+  return buildEmailLayout({
+    preheader: `Ödemeniz onaylandı #${orderId}`,
+    title: "Ödeme Onaylandı",
+    subtitle: "Ödemeniz başarıyla doğrulandı. Siparişiniz hazırlanmaya başladı.",
+    metaLabel: "Sipariş No",
+    metaValue: orderId,
+    contentHtml,
+  });
+}
+
 function buildOrderStatusHtml(order: Order, orderId: string, nextStatus: OrderStatus) {
   const contentHtml = `
     <p style="margin:0 0 12px;color:#4f4f4f;font-size:14px;line-height:1.6;">
@@ -383,6 +465,36 @@ export async function sendOrderNotification(order: Order, orderId: string) {
 
   const subject = `Oar & Ore - Yeni bekleyen sipariş (${orderId})`;
   const html = buildOrderHtml(order, orderId);
+  await sendEmail(recipients, subject, html);
+}
+
+export async function sendOrderConfirmationToCustomer(order: Order, orderId: string) {
+  const recipients = Array.from(
+    new Set(
+      [order.userEmail, order.shipping.email]
+        .map((value) => normalizeEmail(String(value ?? "")))
+        .filter(Boolean),
+    ),
+  );
+  if (recipients.length === 0) return;
+
+  const subject = `Oar & Ore - Siparişiniz oluşturuldu (#${orderId})`;
+  const html = buildOrderConfirmationHtml(order, orderId);
+  await sendEmail(recipients, subject, html);
+}
+
+export async function sendPaymentApprovedToCustomer(order: Order, orderId: string) {
+  const recipients = Array.from(
+    new Set(
+      [order.userEmail, order.shipping.email]
+        .map((value) => normalizeEmail(String(value ?? "")))
+        .filter(Boolean),
+    ),
+  );
+  if (recipients.length === 0) return;
+
+  const subject = `Oar & Ore - Ödemeniz onaylandı (#${orderId})`;
+  const html = buildPaymentApprovedHtml(order, orderId);
   await sendEmail(recipients, subject, html);
 }
 

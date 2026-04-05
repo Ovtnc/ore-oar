@@ -1,14 +1,22 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { readSessionToken, SESSION_COOKIE_NAME } from "@/lib/auth";
-import { createOrderForUser, listOrdersForUser, normalizeCustomerNote, normalizeOrderItems, StockConflictError } from "@/lib/db-orders";
-import { sendOrderNotification } from "@/lib/email";
+import {
+  CouponValidationError,
+  createOrderForUser,
+  listOrdersForUser,
+  normalizeCustomerNote,
+  normalizeOrderItems,
+  StockConflictError,
+} from "@/lib/db-orders";
+import { sendOrderConfirmationToCustomer, sendOrderNotification } from "@/lib/email";
 import { OrderItem, ShippingInfo } from "@/lib/types";
 
 type CreateOrderPayload = {
   items: OrderItem[];
   shipping: ShippingInfo;
   customerNote?: string;
+  couponCode?: string;
   total: number;
 };
 
@@ -32,6 +40,7 @@ export async function POST(request: Request) {
       items: normalizedItems,
       shipping: payload.shipping,
       customerNote: customerNote || undefined,
+      couponCode: String(payload.couponCode ?? "").trim() || undefined,
     });
 
     try {
@@ -40,10 +49,19 @@ export async function POST(request: Request) {
       // E-posta hatası sipariş akışını bozmasın.
     }
 
+    try {
+      await sendOrderConfirmationToCustomer({ ...order, _id: undefined }, order._id ?? "");
+    } catch {
+      // Müşteri onay maili başarısız olsa da sipariş oluşumu devam etsin.
+    }
+
     return NextResponse.json({ orderId: order._id });
   } catch (err) {
     if (err instanceof StockConflictError) {
       return NextResponse.json({ error: err.message }, { status: 409 });
+    }
+    if (err instanceof CouponValidationError) {
+      return NextResponse.json({ error: err.message }, { status: 400 });
     }
     return NextResponse.json({ error: "Sipariş oluşturulamadı." }, { status: 500 });
   }

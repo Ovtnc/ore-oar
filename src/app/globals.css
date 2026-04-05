@@ -32,8 +32,19 @@ body {
   letter-spacing: 0.01em;
 }
 
+:is(a, button, input, select, textarea):focus-visible {
+  outline: 2px solid #d4af37;
+  outline-offset: 2px;
+  box-shadow: 0 0 0 4px rgba(212, 175, 55, 0.2);
+}
+
 h1,
-h2,
+h2 {
+  font-family: "Palatino Linotype", "Book Antiqua", Georgia, serif;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
 h3,
 h4 {
   font-family: "Palatino Linotype", "Book Antiqua", Georgia, serif;
@@ -89,7 +100,7 @@ h4 {
   border: 1px solid rgba(212, 175, 55, 0.24);
   background: linear-gradient(155deg, rgba(34, 34, 34, 0.88), rgba(14, 14, 14, 0.9));
   box-shadow: 0 12px 28px rgba(0, 0, 0, 0.32);
-  transition: transform 220ms ease, border-color 220ms ease, box-shadow 220ms ease;
+  transition: all 500ms ease-in-out;
 }
 
 .product-card::before {
@@ -136,10 +147,21 @@ h4 {
   border: 1px solid rgba(212, 175, 55, 0.85);
   background: rgba(0, 0, 0, 0.35);
   color: #d4af37;
-  transition: background 180ms ease, color 180ms ease;
+  transition: all 500ms ease-in-out;
 }
 
 .product-card:hover .product-button {
   background: #d4af37;
   color: #0a0a0a;
+}
+
+button {
+  transition: all 500ms ease-in-out;
+}
+
+button[class*="#D4AF37"]:hover,
+a[class*="#D4AF37"]:hover,
+.product-button:hover,
+.lux-pill:hover {
+  box-shadow: 0 0 0 1px rgba(212, 175, 55, 0.25), 0 0 18px rgba(212, 175, 55, 0.32);
 }

@@ -5,7 +5,10 @@ export type AppSettingKey =
   | "homepage-lookbook"
   | "payment-settings"
   | "shipping-settings"
-  | "order-alert-settings";
+  | "order-alert-settings"
+  | "coupon-settings"
+  | "newsletter-subscribers"
+  | "product-reviews";
 
 export async function readSetting<T>(key: AppSettingKey, fallback: T): Promise<T> {
   const row = await prisma.appSetting.findUnique({ where: { key } });

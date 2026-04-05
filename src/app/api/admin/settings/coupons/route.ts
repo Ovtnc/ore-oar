@@ -37,7 +37,6 @@ export async function POST(request: Request) {
       usageLimit?: number | null;
       validFrom?: string;
       validUntil?: string;
-      collectionRestriction?: string | null;
       isActive?: boolean;
     } | null;
     const coupons = await upsertCoupon({
@@ -48,7 +47,6 @@ export async function POST(request: Request) {
       usageLimit: body?.usageLimit ?? null,
       validFrom: body?.validFrom ?? "",
       validUntil: body?.validUntil ?? "",
-      collectionRestriction: body?.collectionRestriction ?? null,
       isActive: body?.isActive !== false,
     });
     return NextResponse.json({ coupons });

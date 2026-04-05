@@ -5,8 +5,6 @@ import { Coupon, CouponDiscountType } from "@/lib/types";
 
 const COUPON_SETTINGS_KEY = "coupon-settings";
 const MAX_COUPONS = 200;
-const COLLECTIONS = new Set(["Atelier 01", "Monolith", "Arc Form", "Forge"]);
-
 type PrismaCouponRow = {
   id: string;
   code: string;
@@ -78,13 +76,6 @@ function normalizeDate(input: unknown) {
   return parsed.toISOString();
 }
 
-function normalizeCollectionRestriction(input: unknown) {
-  const value = String(input ?? "").trim();
-  if (!value) return null;
-  if (COLLECTIONS.has(value)) return value;
-  return value;
-}
-
 function normalizeCouponRecord(input: unknown): Coupon | null {
   const row = input as Record<string, unknown> | undefined;
   const code = normalizeCode(row?.code);
@@ -97,7 +88,6 @@ function normalizeCouponRecord(input: unknown): Coupon | null {
   const usedCount = normalizeAmount(row?.usedCount ?? 0);
   const validFrom = normalizeDate(row?.validFrom ?? row?.createdAt ?? new Date(0).toISOString()) || new Date(0).toISOString();
   const validUntil = normalizeDate(row?.validUntil ?? row?.expiresAt ?? new Date().toISOString()) || new Date().toISOString();
-  const collectionRestriction = normalizeCollectionRestriction(row?.collectionRestriction ?? row?.collection ?? null);
   const isActive = row?.isActive !== false;
   const createdAt = normalizeDate(row?.createdAt ?? validFrom) || new Date().toISOString();
   const updatedAt = normalizeDate(row?.updatedAt ?? new Date().toISOString()) || new Date().toISOString();
@@ -112,7 +102,7 @@ function normalizeCouponRecord(input: unknown): Coupon | null {
     usedCount,
     validFrom,
     validUntil,
-    collectionRestriction,
+    collectionRestriction: null,
     isActive,
     createdAt,
     updatedAt,
@@ -130,7 +120,7 @@ function serializeCoupon(row: PrismaCouponRow): Coupon {
     usedCount: row.usedCount,
     validFrom: row.validFrom.toISOString(),
     validUntil: row.validUntil.toISOString(),
-    collectionRestriction: row.collectionRestriction ?? null,
+    collectionRestriction: null,
     isActive: row.isActive,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
@@ -178,7 +168,7 @@ async function syncLegacyCouponsIfNeeded() {
         usedCount: coupon.usedCount,
         validFrom: new Date(coupon.validFrom),
         validUntil: new Date(coupon.validUntil),
-        collectionRestriction: coupon.collectionRestriction,
+        collectionRestriction: null,
         isActive: coupon.isActive,
       },
       create: {
@@ -190,7 +180,7 @@ async function syncLegacyCouponsIfNeeded() {
         usedCount: coupon.usedCount,
         validFrom: new Date(coupon.validFrom),
         validUntil: new Date(coupon.validUntil),
-        collectionRestriction: coupon.collectionRestriction,
+        collectionRestriction: null,
         isActive: coupon.isActive,
       },
     });
@@ -235,30 +225,7 @@ async function findCouponRow(code: string) {
 }
 
 async function calculateEligibleSubtotal(items: CouponCartItem[], coupon: Coupon) {
-  const subtotal = items.reduce((sum, item) => sum + toSafePrice(item.price) * Math.max(1, Math.trunc(item.quantity || 0)), 0);
-  if (!coupon.collectionRestriction) {
-    return subtotal;
-  }
-
-  const productIds = Array.from(new Set(items.map((item) => String(item.productId ?? "").trim()).filter(Boolean)));
-  const collectionMap = new Map<string, string>();
-  if (productIds.length > 0) {
-    const products = await prisma.product.findMany({
-      where: { id: { in: productIds } },
-      select: { id: true, collection: true },
-    });
-    products.forEach((product) => {
-      collectionMap.set(product.id, product.collection);
-    });
-  }
-
-  return items.reduce((sum, item) => {
-    const collection = String(item.collection ?? "").trim() || collectionMap.get(String(item.productId ?? "").trim()) || "";
-    if (collection && collection === coupon.collectionRestriction) {
-      return sum + toSafePrice(item.price) * Math.max(1, Math.trunc(item.quantity || 0));
-    }
-    return sum;
-  }, 0);
+  return items.reduce((sum, item) => sum + toSafePrice(item.price) * Math.max(1, Math.trunc(item.quantity || 0)), 0);
 }
 
 export async function fetchCoupons() {
@@ -283,7 +250,7 @@ export async function saveCoupons(input: unknown) {
         usageLimit: coupon.usageLimit ?? null,
         validFrom: new Date(coupon.validFrom),
         validUntil: new Date(coupon.validUntil),
-        collectionRestriction: coupon.collectionRestriction ?? null,
+      collectionRestriction: null,
         isActive: coupon.isActive !== false,
       },
       create: {
@@ -294,7 +261,7 @@ export async function saveCoupons(input: unknown) {
         usageLimit: coupon.usageLimit ?? null,
         validFrom: new Date(coupon.validFrom),
         validUntil: new Date(coupon.validUntil),
-        collectionRestriction: coupon.collectionRestriction ?? null,
+      collectionRestriction: null,
         isActive: coupon.isActive !== false,
       },
     });
@@ -335,7 +302,7 @@ export async function upsertCoupon(input: Partial<Coupon>) {
       usageLimit: next.usageLimit ?? null,
       validFrom: new Date(next.validFrom),
       validUntil: new Date(next.validUntil),
-      collectionRestriction: next.collectionRestriction ?? null,
+      collectionRestriction: null,
       isActive: next.isActive !== false,
     },
     create: {
@@ -347,7 +314,7 @@ export async function upsertCoupon(input: Partial<Coupon>) {
       usedCount: next.usedCount,
       validFrom: new Date(next.validFrom),
       validUntil: new Date(next.validUntil),
-      collectionRestriction: next.collectionRestriction ?? null,
+      collectionRestriction: null,
       isActive: next.isActive !== false,
     },
   });
@@ -463,15 +430,6 @@ export async function validateCoupon(code: string, context?: { subtotal?: number
   }
 
   const eligibleSubtotal = await calculateEligibleSubtotal(context?.items ?? [], coupon);
-  if (coupon.collectionRestriction && eligibleSubtotal <= 0) {
-    return {
-      valid: false,
-      coupon: null,
-      discountAmount: 0,
-      eligibleSubtotal: 0,
-      message: `Bu kupon yalnızca ${coupon.collectionRestriction} koleksiyonunda geçerlidir.`,
-    };
-  }
 
   if (coupon.discountValue <= 0) {
     return {
@@ -490,7 +448,7 @@ export async function validateCoupon(code: string, context?: { subtotal?: number
       coupon: null,
       discountAmount: 0,
       eligibleSubtotal,
-      message: "Bu kupon bu sepet için indirim üretmiyor. Sepet toplamını ve koleksiyon kısıtını kontrol et.",
+      message: "Bu kupon bu sepet için indirim üretmiyor.",
     };
   }
 

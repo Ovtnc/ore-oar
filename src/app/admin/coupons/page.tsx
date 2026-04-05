@@ -12,11 +12,8 @@ type CouponFormState = {
   usageLimit: string;
   validFrom: string;
   validUntil: string;
-  collectionRestriction: string;
   isActive: boolean;
 };
-
-const COLLECTIONS = ["Atelier 01", "Monolith", "Arc Form", "Forge"] as const;
 
 function toLocalInputValue(date: Date) {
   const offset = date.getTimezoneOffset() * 60000;
@@ -36,7 +33,6 @@ function defaultForm(): CouponFormState {
     usageLimit: "",
     validFrom: toLocalInputValue(now),
     validUntil: toLocalInputValue(until),
-    collectionRestriction: "",
     isActive: true,
   };
 }
@@ -127,7 +123,6 @@ export default function AdminCouponsPage() {
       usageLimit: coupon.usageLimit == null ? "" : String(coupon.usageLimit),
       validFrom: toLocalInputValue(new Date(coupon.validFrom)),
       validUntil: toLocalInputValue(new Date(coupon.validUntil)),
-      collectionRestriction: coupon.collectionRestriction ?? "",
       isActive: coupon.isActive !== false,
     });
   }
@@ -146,18 +141,17 @@ export default function AdminCouponsPage() {
       const response = await fetch("/api/admin/settings/coupons", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          code: form.code,
-          discountType: form.discountType,
-          discountValue: Number(form.discountValue),
-          minOrderTotal: Number(form.minOrderTotal || 0),
-          usageLimit: form.usageLimit ? Number(form.usageLimit) : null,
-          validFrom: new Date(form.validFrom).toISOString(),
-          validUntil: new Date(form.validUntil).toISOString(),
-          collectionRestriction: form.collectionRestriction || null,
-          isActive: form.isActive,
-        }),
-      });
+          body: JSON.stringify({
+            code: form.code,
+            discountType: form.discountType,
+            discountValue: Number(form.discountValue),
+            minOrderTotal: Number(form.minOrderTotal || 0),
+            usageLimit: form.usageLimit ? Number(form.usageLimit) : null,
+            validFrom: new Date(form.validFrom).toISOString(),
+            validUntil: new Date(form.validUntil).toISOString(),
+            isActive: form.isActive,
+          }),
+        });
 
       const data = (await response.json().catch(() => null)) as { coupons?: Coupon[]; error?: string } | null;
       if (!response.ok) throw new Error(data?.error ?? "Kupon kaydedilemedi.");
@@ -331,22 +325,6 @@ export default function AdminCouponsPage() {
               </label>
             </div>
 
-            <label className="block text-sm">
-              <span className="mb-1 block text-zinc-300">Koleksiyon Kısıtlaması</span>
-              <select
-                value={form.collectionRestriction}
-                onChange={(e) => setForm((prev) => ({ ...prev, collectionRestriction: e.target.value }))}
-                className={fieldClass}
-              >
-                <option value="">Tüm Koleksiyonlar</option>
-                {COLLECTIONS.map((collection) => (
-                  <option key={collection} value={collection}>
-                    {collection}
-                  </option>
-                ))}
-              </select>
-            </label>
-
             <label className="flex items-center gap-3 rounded-2xl border border-[#D4AF37]/20 bg-black/25 px-3 py-2.5 text-sm text-zinc-200">
               <input
                 type="checkbox"
@@ -406,7 +384,6 @@ export default function AdminCouponsPage() {
                       <th className="px-4 py-3">Alt Limit</th>
                       <th className="px-4 py-3">Kullanım</th>
                       <th className="px-4 py-3">Tarih</th>
-                      <th className="px-4 py-3">Koleksiyon</th>
                       <th className="px-4 py-3">Durum</th>
                       <th className="px-4 py-3 text-right">İşlem</th>
                     </tr>
@@ -434,7 +411,6 @@ export default function AdminCouponsPage() {
                             <div>{formatCouponDate(coupon.validFrom)}</div>
                             <div className="text-xs text-zinc-500">→ {formatCouponDate(coupon.validUntil)}</div>
                           </td>
-                          <td className="px-4 py-4 text-zinc-300">{coupon.collectionRestriction || "Tümü"}</td>
                           <td className="px-4 py-4">
                             <span className={`inline-flex rounded-full border px-3 py-1 text-xs ${status.className}`}>
                               {status.label}

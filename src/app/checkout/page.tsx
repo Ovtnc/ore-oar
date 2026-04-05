@@ -599,11 +599,6 @@ export default function CheckoutPage() {
                 <p className="mt-1 text-red-200">
                   İndirim: -{couponDiscountAmount.toLocaleString("tr-TR")} TL
                 </p>
-                {couponState.coupon.collectionRestriction && (
-                  <p className="mt-1 text-xs text-zinc-500">
-                    Koleksiyon: {couponState.coupon.collectionRestriction}
-                  </p>
-                )}
               </div>
             )}
             {couponState.message && (

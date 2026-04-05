@@ -46,6 +46,7 @@ export function normalizeOrderItems(input: unknown) {
       name,
       quantity,
       price: toSafePrice(row?.price ?? 0),
+      collection: row?.collection ? String(row.collection).trim() : undefined,
       coatingOptionId: row?.coatingOptionId ? String(row.coatingOptionId) : undefined,
       coatingName: row?.coatingName ? String(row.coatingName) : undefined,
       coatingPriceDelta: toSafePrice(row?.coatingPriceDelta ?? 0),

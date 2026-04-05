@@ -27,6 +27,7 @@ export type CouponCartItem = {
   productId: string;
   quantity: number;
   price: number;
+  collection?: string;
 };
 
 export type CouponValidationResult =
@@ -240,18 +241,23 @@ async function calculateEligibleSubtotal(items: CouponCartItem[], coupon: Coupon
   }
 
   const productIds = Array.from(new Set(items.map((item) => String(item.productId ?? "").trim()).filter(Boolean)));
-  if (productIds.length === 0) return 0;
+  const collectionMap = new Map<string, string>();
+  if (productIds.length > 0) {
+    const products = await prisma.product.findMany({
+      where: { id: { in: productIds } },
+      select: { id: true, collection: true },
+    });
+    products.forEach((product) => {
+      collectionMap.set(product.id, product.collection);
+    });
+  }
 
-  const products = await prisma.product.findMany({
-    where: { id: { in: productIds } },
-    select: { id: true, collection: true },
-  });
-
-  const collectionMap = new Map(products.map((product) => [product.id, product.collection]));
   return items.reduce((sum, item) => {
-    const collection = collectionMap.get(String(item.productId ?? "").trim());
-    if (collection !== coupon.collectionRestriction) return sum;
-    return sum + toSafePrice(item.price) * Math.max(1, Math.trunc(item.quantity || 0));
+    const collection = String(item.collection ?? "").trim() || collectionMap.get(String(item.productId ?? "").trim()) || "";
+    if (collection && collection === coupon.collectionRestriction) {
+      return sum + toSafePrice(item.price) * Math.max(1, Math.trunc(item.quantity || 0));
+    }
+    return sum;
   }, 0);
 }
 
@@ -262,6 +268,9 @@ export async function fetchCoupons() {
 export async function saveCoupons(input: unknown) {
   const rows = Array.isArray(input) ? input : [];
   const normalized = rows.map(normalizeCouponRecord).filter((item): item is Coupon => item !== null);
+  if (normalized.some((coupon) => coupon.discountValue <= 0)) {
+    throw new Error("İndirim miktarı 0 olamaz.");
+  }
   const unique = Array.from(new Map(normalized.map((item) => [item.code, item])).values()).slice(0, MAX_COUPONS);
 
   for (const coupon of unique) {
@@ -312,6 +321,9 @@ export async function upsertCoupon(input: Partial<Coupon>) {
 
   if (!next) {
     throw new Error("Geçerli kupon bilgisi girin.");
+  }
+  if (next.discountValue <= 0) {
+    throw new Error("İndirim miktarı 0 olamaz.");
   }
 
   await prisma.coupon.upsert({
@@ -461,6 +473,16 @@ export async function validateCoupon(code: string, context?: { subtotal?: number
     };
   }
 
+  if (coupon.discountValue <= 0) {
+    return {
+      valid: false,
+      coupon: null,
+      discountAmount: 0,
+      eligibleSubtotal,
+      message: "Bu kupon için indirim miktarı tanımlı değil.",
+    };
+  }
+
   const discountAmount = calculateCouponDiscount(eligibleSubtotal, coupon);
   if (discountAmount <= 0) {
     return {
@@ -468,7 +490,7 @@ export async function validateCoupon(code: string, context?: { subtotal?: number
       coupon: null,
       discountAmount: 0,
       eligibleSubtotal,
-      message: "Bu kupon bu sepet için indirim üretmiyor.",
+      message: "Bu kupon bu sepet için indirim üretmiyor. Sepet toplamını ve koleksiyon kısıtını kontrol et.",
     };
   }
 

@@ -116,6 +116,7 @@ export type OrderItem = {
   name: string;
   price: number;
   quantity: number;
+  collection?: string;
   coatingOptionId?: string;
   coatingName?: string;
   coatingPriceDelta?: number;

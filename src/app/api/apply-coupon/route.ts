@@ -29,6 +29,7 @@ export async function POST(request: Request) {
         productId: item.productId,
         quantity: item.quantity,
         price: item.price,
+        collection: item.collection,
       })),
     });
 

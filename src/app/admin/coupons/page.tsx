@@ -281,7 +281,7 @@ export default function AdminCouponsPage() {
                   value={form.discountValue}
                   onChange={(e) => setForm((prev) => ({ ...prev, discountValue: e.target.value }))}
                   type="number"
-                  min={0}
+                  min={1}
                   className={fieldClass}
                 />
               </label>

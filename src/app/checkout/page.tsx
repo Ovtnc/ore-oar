@@ -246,6 +246,7 @@ export default function CheckoutPage() {
         productId: item.product.id,
         price: item.unitPrice,
         quantity: item.quantity,
+        collection: item.product.collection,
       })),
       totalValue: grandTotal,
     });
@@ -400,6 +401,7 @@ export default function CheckoutPage() {
         name: item.product.name,
         price: item.unitPrice,
         quantity: item.quantity,
+        collection: item.product.collection,
         coatingOptionId: item.coatingOption?.id,
         coatingName: item.coatingOption?.name,
         coatingPriceDelta: item.coatingOption?.priceDelta ?? 0,

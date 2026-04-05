@@ -24,6 +24,20 @@ function formatDate(value?: string) {
   return parsed.toLocaleString("tr-TR");
 }
 
+function normalizeSmtpPassword(value: string | undefined) {
+  return String(value ?? "")
+    .trim()
+    .replace(/\s+/g, "");
+}
+
+function resolveMailFrom() {
+  const from = process.env.MAIL_FROM?.trim();
+  if (from) return from;
+  const smtpUser = process.env.SMTP_USER?.trim();
+  if (smtpUser) return smtpUser;
+  return "onboarding@resend.dev";
+}
+
 function statusPill(status: string) {
   const normalized = escapeHtml(status);
   return `<span style="display:inline-block;padding:6px 12px;border-radius:999px;background:#11161f;border:1px solid rgba(212,175,55,0.35);color:#f3d47b;font-size:12px;line-height:1">${normalized}</span>`;
@@ -420,12 +434,12 @@ async function sendEmail(recipients: string[], subject: string, html: string) {
   const resendKey = process.env.RESEND_API_KEY?.trim();
   const smtpHost = process.env.SMTP_HOST?.trim();
   const smtpUser = process.env.SMTP_USER?.trim();
-  const smtpPass = process.env.SMTP_PASS?.trim();
+  const smtpPass = normalizeSmtpPassword(process.env.SMTP_PASS);
 
   if (resendKey) {
     const resend = new Resend(process.env.RESEND_API_KEY);
     await resend.emails.send({
-      from: process.env.MAIL_FROM ?? "onboarding@resend.dev",
+      from: resolveMailFrom(),
       to: recipients,
       subject,
       html,
@@ -448,8 +462,7 @@ async function sendEmail(recipients: string[], subject: string, html: string) {
   });
 
   await transporter.sendMail({
-    // SMTP'de gönderici olarak SMTP hesabını kullanmak daha uyumlu olur.
-    from: smtpUser,
+    from: resolveMailFrom(),
     to: recipients,
     subject,
     html,

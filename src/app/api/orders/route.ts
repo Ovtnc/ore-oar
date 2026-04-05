@@ -45,13 +45,15 @@ export async function POST(request: Request) {
 
     try {
       await sendOrderNotification({ ...order, _id: undefined }, order._id ?? "");
-    } catch {
+    } catch (err) {
+      console.error("[orders] admin notification mail failed", err);
       // E-posta hatası sipariş akışını bozmasın.
     }
 
     try {
       await sendOrderConfirmationToCustomer({ ...order, _id: undefined }, order._id ?? "");
-    } catch {
+    } catch (err) {
+      console.error("[orders] customer confirmation mail failed", err);
       // Müşteri onay maili başarısız olsa da sipariş oluşumu devam etsin.
     }
 

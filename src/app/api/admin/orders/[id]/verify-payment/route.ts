@@ -22,13 +22,15 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
 
   try {
     await sendOrderStatusUpdateToCustomer({ ...updated, _id: undefined }, id, "Ödeme Alındı");
-  } catch {
+  } catch (err) {
+    console.error("[admin/orders/verify-payment] status email failed", err);
     // Mail başarısız olsa da durum güncellemesi korunur.
   }
 
   try {
     await sendPaymentApprovedToCustomer({ ...updated, _id: undefined }, id);
-  } catch {
+  } catch (err) {
+    console.error("[admin/orders/verify-payment] payment-approved email failed", err);
     // Özel onay maili başarısız olsa bile işlemi bozma.
   }
 

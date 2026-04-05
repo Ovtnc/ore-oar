@@ -36,13 +36,15 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
 
   try {
     await emitPaymentNotifiedToN8n({ orderId: id, order: { ...result.order, _id: undefined } });
-  } catch {
+  } catch (err) {
+    console.error("[orders/payment-sent] n8n emit failed", err);
     // n8n entegrasyon hatası müşteri akışını bozmasın.
   }
 
   try {
     await sendPaymentNotificationToAdmin({ ...result.order, _id: undefined }, id);
-  } catch {
+  } catch (err) {
+    console.error("[orders/payment-sent] admin notification email failed", err);
     // Admin'e bildirim maili atılamasa bile müşteri akışı devam etsin.
   }
   return NextResponse.json({ ok: true, alreadyNotified: false });

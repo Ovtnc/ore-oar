@@ -35,14 +35,16 @@ async function updateStatus(id: string, status: string) {
   if (previousStatus !== nextStatus) {
     try {
       await sendOrderStatusUpdateToCustomer({ ...updated, _id: undefined }, id, nextStatus);
-    } catch {
+    } catch (err) {
+      console.error("[admin/orders] status email failed", err);
       // E-posta hatası durum güncellemesini bozmasın.
     }
 
     if (nextStatus === "Ödeme Alındı") {
       try {
         await sendPaymentApprovedToCustomer({ ...updated, _id: undefined }, id);
-      } catch {
+      } catch (err) {
+        console.error("[admin/orders] payment-approved email failed", err);
         // Ek onay maili başarısız olsa da durum kaydı korunur.
       }
     }

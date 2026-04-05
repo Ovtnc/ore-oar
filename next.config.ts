@@ -4,6 +4,14 @@ const nextConfig: NextConfig = {
   // Node DNS / mongodb sürücüsünün paketlenmesini azalt (VPS DNS yolu)
   serverExternalPackages: ["mongodb"],
   poweredByHeader: false,
+  images: {
+    localPatterns: [
+      { pathname: "/products/**", search: "" },
+      { pathname: "/uploads/**", search: "" },
+      { pathname: "/logo.png", search: "" },
+      { pathname: "/file.svg", search: "" },
+    ],
+  },
   async headers() {
     return [
       {

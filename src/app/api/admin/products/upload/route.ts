@@ -1,20 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireAdminApiAccess } from "@/lib/admin-auth";
-import path from "path";
-import { promises as fs } from "fs";
-import crypto from "crypto";
-
-function resolveExt(file: File) {
-  const originalName = file.name || "image";
-  const byName = path.extname(originalName).toLowerCase().replace(".", "");
-  if (byName) return byName;
-
-  if (file.type === "image/png") return "png";
-  if (file.type === "image/jpeg") return "jpg";
-  if (file.type === "image/webp") return "webp";
-  if (file.type === "image/gif") return "gif";
-  return "";
-}
+import { saveUploadedFiles } from "@/lib/upload-storage";
 
 export async function POST(request: Request) {
   const guard = await requireAdminApiAccess();
@@ -29,25 +15,11 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Dosya bulunamadı" }, { status: 400 });
   }
 
-  const allowedExt = new Set(["png", "jpg", "jpeg", "webp", "gif"]);
-  const uploadDir = path.join(process.cwd(), "public", "uploads");
-  await fs.mkdir(uploadDir, { recursive: true });
-
-  const urls: string[] = [];
-  for (const file of files) {
-    const ext = resolveExt(file);
-    if (!allowedExt.has(ext)) {
-      return NextResponse.json({ error: "Geçersiz dosya tipi" }, { status: 400 });
-    }
-
-    const arrayBuffer = await file.arrayBuffer();
-    const buffer = Buffer.from(arrayBuffer);
-    const safeName = crypto.randomBytes(16).toString("hex");
-    const fileName = `${safeName}.${ext}`;
-    const fullPath = path.join(uploadDir, fileName);
-    await fs.writeFile(fullPath, buffer);
-    urls.push(`/uploads/${fileName}`);
+  try {
+    const urls = await saveUploadedFiles(files);
+    return NextResponse.json({ url: urls[0], urls });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Görsel yüklenemedi.";
+    return NextResponse.json({ error: message }, { status: 400 });
   }
-
-  return NextResponse.json({ url: urls[0], urls });
 }
